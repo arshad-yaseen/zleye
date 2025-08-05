@@ -1,17 +1,17 @@
-# zli
+# zleye
 
 A typescript library
 
 ## Installation
 
 ```bash
-npm install zli
+npm install zleye
 ```
 
 ## Usage
 
 ```typescript
-import { greet } from 'zli';
+import { greet } from 'zleye';
 
 console.log(greet('World')); // Hello, World!
 ```

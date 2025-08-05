@@ -1,5 +1,5 @@
 {
-	"name": "zli",
+	"name": "zleye",
 	"description": "A typescript library",
 	"version": "0.1.1",
 	"type": "module",
@@ -46,7 +46,7 @@
 	},
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/arshad-yaseen/zli.git"
+		"url": "git+https://github.com/arshad-yaseen/zleye.git"
 	},
 	"peerDependencies": {
 		"typescript": ">=4.5.0"
@@ -56,9 +56,9 @@
 			"optional": true
 		}
 	},
-	"homepage": "https://github.com/arshad-yaseen/zli#readme",
+	"homepage": "https://github.com/arshad-yaseen/zleye#readme",
 	"bugs": {
-		"url": "https://github.com/arshad-yaseen/zli/issues"
+		"url": "https://github.com/arshad-yaseen/zleye/issues"
 	},
 	"license": "MIT",
 	"dependencies": {
