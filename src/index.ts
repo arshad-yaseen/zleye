@@ -107,8 +107,7 @@ interface CLI<TOptions extends Record<string, Schema> = Record<string, never>> {
 		schema: S,
 	): CLI<TOptions & { [P in K]: S }>
 	positional(name: string, schema?: Schema): this
-	command<T extends Record<string, Schema>>(cmd: Command<T>): this
-	addCommand<T extends Record<string, Schema>>(
+	command<T extends Record<string, Schema>>(
 		name: string,
 		options: T,
 	): CommandBuilder<T>
@@ -699,13 +698,6 @@ export const z = {
 		}>,
 }
 
-export function command<T extends Record<string, Schema>>(
-	name: string,
-	options: T,
-): CommandBuilder<T> {
-	return new CommandBuilderImpl(name, options)
-}
-
 class CLIImpl<TOptions extends Record<string, Schema> = Record<string, never>>
 	implements CLI<TOptions>
 {
@@ -760,12 +752,7 @@ class CLIImpl<TOptions extends Record<string, Schema> = Record<string, never>>
 		return this
 	}
 
-	command<T extends Record<string, Schema>>(cmd: Command<T>): this {
-		this._commands.push(cmd)
-		return this
-	}
-
-	addCommand<T extends Record<string, Schema>>(
+	command<T extends Record<string, Schema>>(
 		name: string,
 		options: T,
 	): CommandBuilder<T> {
