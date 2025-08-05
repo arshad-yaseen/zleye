@@ -1,6 +1,12 @@
 import { expect, test } from 'bun:test'
-import { greet } from '../src'
+import { cli, z } from '../src'
 
 test('should greet correctly', () => {
-	expect(greet('World')).toBe('Hello, World!')
+	const app = cli()
+		.name('test')
+		.version('1.0.0')
+		.description('Test CLI')
+		.option('name', z.string().default('World'))
+		.parse()
+	expect(app.name).toBe('World')
 })
