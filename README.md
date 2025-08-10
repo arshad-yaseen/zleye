@@ -278,48 +278,46 @@ z.string().transform(s => JSON.parse(s))
 z.string().regex(/^\d+$/).transform(s => parseInt(s))
 ```
 
-## Working with Commands
-
-### Basic Commands
+## Commands
 
 ```typescript
 import { cli, z } from 'zlye'
 
 const program = cli()
-  .name('docker-cli')
-  .description('Container management tool')
+  .name('my-app')
+  .description('A simple CLI application')
 
-// Build command
 program
-  .command('build', {
-    file: z.string()
-      .describe('Dockerfile path')
-      .alias('f')
-      .default('./Dockerfile'),
-    tag: z.string()
-      .describe('Image tag')
-      .alias('t')
-      .optional(),
-    'no-cache': z.boolean()
-      .describe('Do not use cache')
+  .command('greet', {
+    name: z.string()
+      .describe('Name to greet')
+      .default('world'),
+    uppercase: z.boolean()
+      .describe('Convert greeting to uppercase')
   })
-  .description('Build a Docker image')
+  .description('Greet someone')
   .example([
-    'docker-cli build .',
-    'docker-cli build --tag myapp:latest .',
-    'docker-cli build --file ./custom.Dockerfile --no-cache .'
+    'my-app greet',
+    'my-app greet --name Alice',
+    'my-app greet --name Bob --uppercase'
   ])
-  .positional('context', z.string().describe('Build context directory'))
-  .action(async ({ options, positionals }) => {
-    console.log('Building image...')
-    console.log('Options:', options)      // Fully typed!
-    console.log('Context:', positionals[0])
+  .action(({ options }) => {
+    let greeting = `Hello, ${options.name}!`
     
-    // Your build logic here
-    await buildImage(options.file, options.tag, positionals[0])
+    if (options.uppercase) {
+      greeting = greeting.toUpperCase()
+    }
+    
+    console.log(greeting)
   })
 
 program.parse()
+
+### Important Notes
+
+- You can have multiple commands in your CLI application
+- You can have both global options and commands in the same program
+- When a command executes and you have both options and a command defined, the result of `program.parse()` will be `undefined` - the command's options are available through the action callback parameters instead
 ```
 
 ## Advanced Features
@@ -345,21 +343,9 @@ z.string()
   })
 ```
 
-### Environment Variable Integration
+### Transforming Option Values
 
-```typescript
-const program = cli()
-  .option('apiKey', z.string()
-    .describe('API key for authentication')
-    .default(process.env.API_KEY || '')
-    .transform(key => {
-      if (!key) throw new Error('API key is required')
-      return key
-    })
-  )
-```
-
-### Configuration File Support
+You can transform option values into different types using the `transform` method:
 
 ```typescript
 import fs from 'fs'
@@ -372,153 +358,19 @@ const program = cli()
       if (!fs.existsSync(configPath)) {
         throw new Error(`Config file not found: ${configPath}`)
       }
-      return JSON.parse(fs.readFileSync(configPath, 'utf8'))
+      return JSON.parse(fs.readFileSync(configPath, 'utf8')) as Record<string, any>
     })
   )
 ```
 
-## Real-World Examples
-
-### File Processing CLI
+When you access the value, it will be the parsed object with the correct type:
 
 ```typescript
-import { cli, z } from 'zlye'
-
-const processor = cli()
-  .name('process-files')
-  .description('Transform your files with ease')
-  .option('input', z.string().describe('Source file path'))
-  .option('output', z.string().describe('Destination path'))
-  .option('format', z.string().choices(['json', 'csv', 'xml']).describe('Output format'))
-
-const result = processor.parse()
-// Your processing logic here...
+const result = program.parse()
+if (result) {
+  console.log(result.options.config) // Record<string, any>
+}
 ```
-
-### Git-Style CLI
-
-```typescript
-import { cli, z } from 'zlye'
-
-const git = cli()
-  .name('git')
-  .version('2.0.0')
-  .description('Distributed version control system')
-
-// git add
-git.command('add', {
-  all: z.boolean().alias('A').describe('Add all files'),
-  force: z.boolean().alias('f').describe('Force add ignored files'),
-  verbose: z.boolean().alias('v').describe('Be verbose')
-})
-.description('Add file contents to the index')
-.positional('files', z.string().describe('Files to add').optional())
-.example([
-  'git add file.txt',
-  'git add --all',
-  'git add src/ --verbose'
-])
-.action(({ options, positionals }) => {
-  if (options.all) {
-    console.log('Adding all files...')
-  } else {
-    console.log(`Adding files: ${positionals.join(', ')}`)
-  }
-})
-
-// git commit
-git.command('commit', {
-  message: z.string()
-    .alias('m')
-    .describe('Commit message')
-    .min(1, 'Message cannot be empty'),
-  amend: z.boolean().describe('Amend previous commit'),
-  'sign-off': z.boolean().describe('Add Signed-off-by line')
-})
-.description('Record changes to the repository')
-.example([
-  'git commit -m "Initial commit"',
-  'git commit --amend -m "Updated commit"'
-])
-.action(({ options }) => {
-  console.log(`Committing with message: ${options.message}`)
-})
-
-// git push
-git.command('push', {
-  force: z.boolean().alias('f').describe('Force push'),
-  'set-upstream': z.boolean().alias('u').describe('Set upstream branch'),
-  tags: z.boolean().describe('Push tags')
-})
-.positional('remote', z.string().describe('Remote name').default('origin'))
-.positional('branch', z.string().describe('Branch name').optional())
-.action(({ options, positionals }) => {
-  const [remote, branch] = positionals
-  console.log(`Pushing to ${remote}${branch ? `/${branch}` : ''}`)
-})
-
-git.parse()
-```
-
-### Complex Multi-Command Application
-
-```typescript
-const program = cli()
-  .name('docker-cli')
-  .description('Container management tool')
-
-// Run command
-program
-  .command('run', {
-    detach: z.boolean().describe('Run in background').alias('d'),
-    port: z.array(z.string()).describe('Port mapping').alias('p'),
-    volume: z.array(z.string()).describe('Volume mapping').alias('v'),
-    env: z.array(z.string()).describe('Environment variables').alias('e')
-  })
-  .description('Run a container')
-  .positional('image', z.string().describe('Docker image'))
-  .positional('command', z.string().describe('Command to run').optional())
-  .action(({ options, positionals }) => {
-    console.log('Starting container...')
-    // Your run logic here
-  })
-
-program.parse()
-```
-
-## API Reference
-
-### CLI Methods
-
-| Method | Description |
-|--------|-------------|
-| `name(string)` | Set program name |
-| `version(string)` | Set version string |  
-| `description(string)` | Set program description |
-| `usage(string)` | Set custom usage string (rarely needed - auto-generated is preferred) |
-| `example(string \| string[])` | Add usage examples |
-| `option(name, schema)` | Add global option |
-| `positional(name, schema?)` | Add positional argument |
-| `command(name, options)` | Create subcommand |
-| `parse(argv?)` | Parse command line arguments |
-
-### Schema Methods
-
-| Method | Description | Applies To |
-|--------|-------------|------------|
-| `describe(string)` | Add description | All |
-| `alias(string)` | Set short flag alias | All |
-| `example(string)` | Add example value | All |
-| `optional()` | Make optional | All |
-| `default(value)` | Set default value | All |
-| `transform(fn)` | Transform parsed value | All |
-| `min(number)` | Set minimum constraint | String, Number, Array |
-| `max(number)` | Set maximum constraint | String, Number, Array |
-| `regex(pattern, message?)` | Pattern validation | String |
-| `choices(array)` | Restrict to specific values | String |
-| `int()` | Require integer | Number |
-| `positive()` | Require positive number | Number |
-| `negative()` | Require negative number | Number |
 
 ## Contributing
 
