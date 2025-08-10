@@ -1,4 +1,5 @@
 import pc from 'picocolors'
+import { joinWithAnd } from './utils'
 
 type Prettify<T> = { [K in keyof T]: T[K] } & {}
 
@@ -111,9 +112,10 @@ interface CLI<TOptions extends Record<string, Schema> = Record<string, never>> {
 		name: string,
 		options: T,
 	): CommandBuilder<T>
-	parse(
-		argv?: string[],
-	): Prettify<{ [K in keyof TOptions]: TOptions[K]['_output'] }>
+	parse(argv?: string[]): {
+		options: Prettify<{ [K in keyof TOptions]: TOptions[K]['_output'] }>
+		positionals: string[]
+	}
 	_name?: string
 	_version?: string
 	_description?: string
@@ -149,7 +151,9 @@ class StringSchemaImpl<T extends string = string> implements StringSchema<T> {
 		}
 
 		if (this._choices && !this._choices.includes(value)) {
-			throw new CLIError(`${path} must be one of: ${this._choices.join(', ')}`)
+			throw new CLIError(
+				`${path} must be one of: ${joinWithAnd(Array.from(this._choices))}`,
+			)
 		}
 
 		if (this._minLength !== undefined && value.length < this._minLength) {
@@ -893,13 +897,15 @@ class CLIImpl<TOptions extends Record<string, Schema> = Record<string, never>>
 				parsed[key] = schema.parse(rawOptions[key], `--${key}`)
 			}
 
+			const parsedPositionals: string[] = []
 			if (commandPositionals.length > 0) {
 				for (let i = 0; i < commandPositionals.length; i++) {
 					const positional = commandPositionals[i]
 					const value = positionalArgs[i]
 
 					try {
-						positional.parse(value, positional._name)
+						const parsedValue = positional.parse(value, positional._name)
+						parsedPositionals.push(parsedValue)
 					} catch (error) {
 						throw new CLIError(
 							`Argument ${positional._name}: ${error instanceof Error ? error.message.replace(`${positional._name} `, '') : error}`,
@@ -909,8 +915,12 @@ class CLIImpl<TOptions extends Record<string, Schema> = Record<string, never>>
 
 				if (positionalArgs.length > commandPositionals.length) {
 					const extra = positionalArgs.slice(commandPositionals.length)
-					throw new CLIError(`Unexpected arguments: ${extra.join(', ')}`)
+					throw new CLIError(
+						`Unexpected argument${extra.length > 1 ? 's' : ''}: ${joinWithAnd(extra)}`,
+					)
 				}
+			} else {
+				parsedPositionals.push(...positionalArgs)
 			}
 
 			if (commandAction) {
@@ -923,9 +933,12 @@ class CLIImpl<TOptions extends Record<string, Schema> = Record<string, never>>
 				}
 			}
 
-			return parsed as Prettify<{
-				[K in keyof TOptions]: TOptions[K]['_output']
-			}>
+			return {
+				options: parsed as Prettify<{
+					[K in keyof TOptions]: TOptions[K]['_output']
+				}>,
+				positionals: parsedPositionals,
+			}
 		} catch (error) {
 			this.showError(error)
 			process.exit(1)
@@ -1193,7 +1206,7 @@ class CLIImpl<TOptions extends Record<string, Schema> = Record<string, never>>
 			}
 		}
 
-		return constraints.length > 0 ? `(${constraints.join(', ')})` : ''
+		return constraints.length > 0 ? `(${joinWithAnd(constraints)})` : ''
 	}
 
 	private showError(error: unknown) {
@@ -1216,5 +1229,8 @@ export type InferCommand<T extends Command> = T extends Command<infer TOptions>
 	: never
 
 export type InferCLI<T extends CLI> = T extends CLI<infer TOptions>
-	? Prettify<{ [K in keyof TOptions]: TOptions[K]['_output'] }>
+	? {
+			options: Prettify<{ [K in keyof TOptions]: TOptions[K]['_output'] }>
+			positionals: any[]
+		}
 	: never
