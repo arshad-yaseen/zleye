@@ -3,6 +3,11 @@ import { joinWithAnd, joinWithOr } from './utils'
 
 type Prettify<T> = { [K in keyof T]: T[K] } & {}
 
+type ExtractPositionalType<T> = T extends PositionalSchema<infer U> ? U : never
+type ExtractPositionalTypes<T extends readonly PositionalSchema<any>[]> = {
+	readonly [K in keyof T]: ExtractPositionalType<T[K]>
+}
+
 type SchemaType = 'string' | 'number' | 'boolean' | 'array' | 'object'
 
 interface BaseSchema<T = any> {
@@ -71,33 +76,45 @@ interface PositionalSchema<T = string> extends BaseSchema<T> {
 	_name: string
 }
 
-interface Command<TOptions extends Record<string, Schema> = any> {
+interface Command<
+	TOptions extends Record<string, Schema> = any,
+	TPositionals extends readonly PositionalSchema<any>[] = readonly [],
+> {
 	name: string
 	description?: string
 	usage?: string
 	example?: string | string[]
 	options: TOptions
-	positionals?: PositionalSchema[]
+	positionals?: PositionalSchema<any>[]
 	action: (args: {
 		options: Prettify<{ [K in keyof TOptions]: TOptions[K]['_output'] }>
-		positionals: any[]
+		positionals: ExtractPositionalTypes<TPositionals>
 	}) => void | Promise<void>
 }
 
-interface CommandBuilder<TOptions extends Record<string, Schema>> {
+interface CommandBuilder<
+	TOptions extends Record<string, Schema>,
+	TPositionals extends readonly PositionalSchema<any>[] = readonly [],
+> {
 	description(desc: string): this
 	usage(usage: string): this
 	example(example: string | string[]): this
-	positional(name: string, schema?: Schema): this
+	positional<T>(
+		name: string,
+		schema?: Schema<T>,
+	): CommandBuilder<TOptions, [...TPositionals, PositionalSchema<T>]>
 	action(
 		fn: (args: {
 			options: Prettify<{ [K in keyof TOptions]: TOptions[K]['_output'] }>
-			positionals: any[]
+			positionals: ExtractPositionalTypes<TPositionals>
 		}) => void | Promise<void>,
-	): Command<TOptions>
+	): Command<TOptions, TPositionals>
 }
 
-interface CLI<TOptions extends Record<string, Schema> = Record<string, never>> {
+interface CLI<
+	TOptions extends Record<string, Schema> = Record<string, never>,
+	TPositionals extends readonly PositionalSchema<any>[] = readonly [],
+> {
 	name(name: string): this
 	version(version: string): this
 	description(description: string): this
@@ -106,8 +123,11 @@ interface CLI<TOptions extends Record<string, Schema> = Record<string, never>> {
 	option<K extends string, S extends Schema>(
 		name: K,
 		schema: S,
-	): CLI<TOptions & { [P in K]: S }>
-	positional(name: string, schema?: Schema): this
+	): CLI<TOptions & { [P in K]: S }, TPositionals>
+	positional<T>(
+		name: string,
+		schema?: Schema<T>,
+	): CLI<TOptions, [...TPositionals, PositionalSchema<T>]>
 	command<T extends Record<string, Schema>>(
 		name: string,
 		options: T,
@@ -115,7 +135,7 @@ interface CLI<TOptions extends Record<string, Schema> = Record<string, never>> {
 	parse(argv?: string[]):
 		| {
 				options: Prettify<{ [K in keyof TOptions]: TOptions[K]['_output'] }>
-				positionals: any[]
+				positionals: ExtractPositionalTypes<TPositionals>
 		  }
 		| undefined
 	_name?: string
@@ -124,8 +144,8 @@ interface CLI<TOptions extends Record<string, Schema> = Record<string, never>> {
 	_usage?: string
 	_examples?: string[]
 	_options: TOptions
-	_positionals?: PositionalSchema[]
-	_commands: Command[]
+	_positionals?: PositionalSchema<any>[]
+	_commands: Command<any, any>[]
 }
 
 class StringSchemaImpl<T extends string = string> implements StringSchema<T> {
@@ -625,15 +645,17 @@ class PositionalSchemaImpl<T = string> implements PositionalSchema<T> {
 	}
 }
 
-class CommandBuilderImpl<TOptions extends Record<string, Schema>>
-	implements CommandBuilder<TOptions>
+class CommandBuilderImpl<
+	TOptions extends Record<string, Schema>,
+	TPositionals extends readonly PositionalSchema<any>[] = readonly [],
+> implements CommandBuilder<TOptions, TPositionals>
 {
 	private _name: string
 	private _options: TOptions
 	private _description?: string
 	private _usage?: string
 	private _examples: string[] = []
-	private _positionals: PositionalSchema[] = []
+	private _positionals: PositionalSchema<any>[] = []
 
 	constructor(name: string, options: TOptions) {
 		this._name = name
@@ -659,25 +681,28 @@ class CommandBuilderImpl<TOptions extends Record<string, Schema>>
 		return this
 	}
 
-	positional(name: string, schema?: Schema): this {
+	positional<T>(
+		name: string,
+		schema?: Schema<T>,
+	): CommandBuilder<TOptions, [...TPositionals, PositionalSchema<T>]> {
 		this._positionals.push(new PositionalSchemaImpl(name, schema))
-		return this
+		return this as any
 	}
 
 	action(
 		fn: (args: {
 			options: Prettify<{ [K in keyof TOptions]: TOptions[K]['_output'] }>
-			positionals: any[]
+			positionals: ExtractPositionalTypes<TPositionals>
 		}) => void | Promise<void>,
-	): Command<TOptions> {
+	): Command<TOptions, TPositionals> {
 		return {
 			name: this._name,
 			description: this._description,
 			usage: this._usage,
 			example: this._examples.length > 0 ? this._examples : undefined,
 			options: this._options,
-			positionals: this._positionals,
-			action: fn,
+			positionals: this._positionals as any,
+			action: fn as any,
 		}
 	}
 }
@@ -704,8 +729,10 @@ export const z = {
 		}>,
 }
 
-class CLIImpl<TOptions extends Record<string, Schema> = Record<string, never>>
-	implements CLI<TOptions>
+class CLIImpl<
+	TOptions extends Record<string, Schema> = Record<string, never>,
+	TPositionals extends readonly PositionalSchema<any>[] = readonly [],
+> implements CLI<TOptions, TPositionals>
 {
 	_name?: string
 	_version?: string
@@ -713,8 +740,8 @@ class CLIImpl<TOptions extends Record<string, Schema> = Record<string, never>>
 	_usage?: string
 	_examples: string[] = []
 	_options: TOptions = {} as TOptions
-	_positionals: PositionalSchema[] = []
-	_commands: Command[] = []
+	_positionals: PositionalSchema<any>[] = []
+	_commands: Command<any, any>[] = []
 
 	name(name: string): this {
 		this._name = name
@@ -748,14 +775,17 @@ class CLIImpl<TOptions extends Record<string, Schema> = Record<string, never>>
 	option<K extends string, S extends Schema>(
 		name: K,
 		schema: S,
-	): CLI<TOptions & { [P in K]: S }> {
+	): CLI<TOptions & { [P in K]: S }, TPositionals> {
 		;(this._options as any)[name] = schema
 		return this as any
 	}
 
-	positional(name: string, schema?: Schema): this {
+	positional<T>(
+		name: string,
+		schema?: Schema<T>,
+	): CLI<TOptions, [...TPositionals, PositionalSchema<T>]> {
 		this._positionals.push(new PositionalSchemaImpl(name, schema))
-		return this
+		return this as any
 	}
 
 	command<T extends Record<string, Schema>>(
@@ -910,7 +940,7 @@ class CLIImpl<TOptions extends Record<string, Schema> = Record<string, never>>
 						parsedPositionals.push(parsedValue)
 					} catch (error) {
 						throw new CLIError(
-							`Argument ${positional._name}: ${error instanceof Error ? error.message.replace(`${positional._name} `, '') : error}`,
+							`Argument "${positional._name}" ${error instanceof Error ? error.message.replace(`${positional._name} `, '') : error}`,
 						)
 					}
 				}
@@ -943,7 +973,7 @@ class CLIImpl<TOptions extends Record<string, Schema> = Record<string, never>>
 				options: parsed as Prettify<{
 					[K in keyof TOptions]: TOptions[K]['_output']
 				}>,
-				positionals: parsedPositionals,
+				positionals: parsedPositionals as ExtractPositionalTypes<TPositionals>,
 			}
 		} catch (error) {
 			this.showError(error)
@@ -1225,6 +1255,6 @@ class CLIImpl<TOptions extends Record<string, Schema> = Record<string, never>>
 	}
 }
 
-export function cli(): CLI<Record<string, never>> {
-	return new CLIImpl<Record<string, never>>()
+export function cli(): CLI<Record<string, never>, readonly []> {
+	return new CLIImpl<Record<string, never>, readonly []>()
 }

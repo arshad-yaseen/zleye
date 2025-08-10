@@ -498,15 +498,16 @@ Zlye is built for full type safety:
 const program = cli()
   .option('count', z.number().min(1))
   .option('name', z.string().optional())
-  .positional('numbers', z.array(z.number().positive()))
+  .positional('source', z.string().describe('Source file path'))
+  .positional('copies', z.number().int().positive().describe('Number of copies to create'))
+  .positional('tags', z.array(z.string()).describe('List of tags to apply'))
 
 const result = program.parse()
 if (result) {
   // TypeScript knows these types!
   result.options.count // number  
   result.options.name  // string | undefined
-  result.options.numbers // number[]
-  result.positionals   // any[]
+  result.positionals   // readonly [string, number, string[]]
 }
 ```
 
