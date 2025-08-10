@@ -1,10 +1,9 @@
 import { cli, z } from './src'
 
 const program = cli()
-	.name('my-app')
-	.version('1.0.0')
-	.description('A simple CLI application')
-	.option('verbose', z.boolean().describe('Enable verbose output'))
-	.option('output', z.string().describe('Output file path'))
+	.name('@bunup/create')
+	.description('Scaffold a new project with Bunup')
+	.version('0.0.1')
+	.positional('name', z.string().describe('The name of the project'))
 
-program.parse()
+const result = program.parse()

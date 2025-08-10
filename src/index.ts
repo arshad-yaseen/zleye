@@ -1014,7 +1014,9 @@ class CLIImpl<
 			if (this._commands.length > 0) {
 				parts.push(pc.blue('<command>'))
 			}
-			parts.push(pc.blue('[...flags]'))
+			if (Object.keys(this._options).length > 0) {
+				parts.push(pc.blue('[...flags]'))
+			}
 			if (this._positionals.length > 0) {
 				parts.push(...this._positionals.map((p) => pc.dim(`<${p._name}>`)))
 			} else {
@@ -1088,7 +1090,7 @@ class CLIImpl<
 
 		const usage =
 			command.usage ||
-			`${this._name || 'cli'} ${command.name} ${pc.cyan('[...flags]')}${command.positionals ? ` ${command.positionals.map((p) => pc.dim(`<${p._name}>`)).join(' ')}` : ''}`
+			`${this._name || 'cli'} ${command.name}${Object.keys(command.options).length > 0 ? ` ${pc.cyan('[...flags]')}` : ''}${command.positionals ? ` ${command.positionals.map((p) => pc.dim(`<${p._name}>`)).join(' ')}` : ''}`
 		console.log(`${pc.bold('Usage:')} ${usage}`)
 		console.log()
 
