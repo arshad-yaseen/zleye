@@ -1,14 +1,11 @@
 import { cli, z } from './src'
 
-const program = cli()
-	.option('count', z.number().min(1))
-	.option('name', z.string().optional())
-	.positional('source', z.string().describe('Source file path'))
-	.positional(
-		'copies',
-		z.number().int().positive().describe('Number of copies to create'),
-	)
-	.positional('tags', z.array(z.string()).describe('List of tags to apply'))
+// const program = cli().positional('count', z.array(z.number().negative()))
+// const program = cli().option('count', z.array(z.number().negative()))
+const program = cli().option(
+	'count',
+	z.array(z.string().choices(['dev', 'staging', 'prod'])),
+)
 
 const result = program.parse()
 console.log(result)

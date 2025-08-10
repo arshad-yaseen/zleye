@@ -36,8 +36,8 @@ const program = cli()
 
 const result = program.parse()
 if (result) {
-  console.log('Options:', result.options)
-  console.log('Arguments:', result.positionals)
+  console.log('Options:', result.options) // Fully typed!
+  console.log('Arguments:', result.positionals) // Fully typed!
 }
 ```
 
@@ -148,7 +148,6 @@ const program = cli()
   .name('myapp')                           // Program name
   .version('2.1.0')                        // Version string
   .description('My awesome CLI tool')      // Description
-  .usage('myapp [command] [options]')      // Custom usage string
   .example([                               // Usage examples
     'myapp --verbose',
     'myapp build --output dist/'
@@ -211,12 +210,12 @@ program
       .default('./Dockerfile'),
     tag: z.string()
       .describe('Image tag')
-      .alias('t'),
+      .alias('t')
+      .optional(),
     'no-cache': z.boolean()
       .describe('Do not use cache')
   })
   .description('Build a Docker image')
-  .usage('docker-cli build [options] <context>')
   .example([
     'docker-cli build .',
     'docker-cli build --tag myapp:latest .',
@@ -434,16 +433,19 @@ $ myapp --port 99999
 Error: --port must be at most 65535
 
 $ myapp build
-Error: Argument context: context is required
+Error: Argument "context" is required
 
 $ myapp --invalid-flag
 Error: Unknown option: --invalid-flag
 
 $ myapp --numbers 2,-10
-Error: Argument numbers: numbers[1] must be positive
+Error: Argument "numbers": first value must be positive
 
 $ my-cli --env invalid  
 Error: --env must be one of dev, staging, or prod
+
+$ my-cli --envs dev,invalid,prod
+Error: --envs: second value must be one of dev, staging, or prod
 ```
 
 ## API Reference
@@ -455,7 +457,7 @@ Error: --env must be one of dev, staging, or prod
 | `name(string)` | Set program name |
 | `version(string)` | Set version string |  
 | `description(string)` | Set program description |
-| `usage(string)` | Set custom usage string |
+| `usage(string)` | Set custom usage string (rarely needed - auto-generated is preferred) |
 | `example(string \| string[])` | Add usage examples |
 | `option(name, schema)` | Add global option |
 | `positional(name, schema?)` | Add positional argument |
@@ -479,16 +481,6 @@ Error: --env must be one of dev, staging, or prod
 | `int()` | Require integer | Number |
 | `positive()` | Require positive number | Number |
 | `negative()` | Require negative number | Number |
-
-## Best Practices
-
-1. **Use descriptive option names**: Prefer `--output-dir` over `--out`
-2. **Provide helpful descriptions**: Users rely on `--help` for guidance  
-3. **Set sensible defaults**: Reduce required configuration
-4. **Use aliases sparingly**: Only for very common options
-5. **Group related options**: Use objects for complex configuration
-6. **Validate early**: Use transforms to catch issues immediately
-7. **Provide examples**: Show real usage patterns in help text
 
 ## TypeScript Support
 

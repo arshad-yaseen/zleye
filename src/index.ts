@@ -1,5 +1,5 @@
 import pc from 'picocolors'
-import { joinWithAnd, joinWithOr } from './utils'
+import { getOrdinalNumber, joinWithAnd, joinWithOr } from './utils'
 
 type Prettify<T> = { [K in keyof T]: T[K] } & {}
 
@@ -472,7 +472,14 @@ class ArraySchemaImpl<T> implements ArraySchema<T> {
 			throw new CLIError(`${path} must have at most ${this._maxLength} items`)
 		}
 
-		return arr.map((item, i) => this._itemSchema.parse(item, `${path}[${i}]`))
+		return arr.map((item, i) => {
+			const ordinalPath =
+				path.includes('"') || path.includes(' ')
+					? `${getOrdinalNumber(i)} value of ${path}`
+					: `${path}: ${getOrdinalNumber(i)} value`
+
+			return this._itemSchema.parse(item, ordinalPath)
+		})
 	}
 
 	optional(): Schema<T[] | undefined> {
@@ -940,7 +947,7 @@ class CLIImpl<
 						parsedPositionals.push(parsedValue)
 					} catch (error) {
 						throw new CLIError(
-							`Argument "${positional._name}" ${error instanceof Error ? error.message.replace(`${positional._name} `, '') : error}`,
+							`Argument "${positional._name}": ${error instanceof Error ? error.message.replace(`${positional._name} `, '').replace(`${positional._name}: `, '') : error}`,
 						)
 					}
 				}
