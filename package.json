@@ -1,6 +1,6 @@
 {
-	"name": "zleye",
-	"description": "A typescript library",
+	"name": "zlye",
+	"description": "A type-safe CLI parser with a Zod-like schema validation.",
 	"version": "0.1.2",
 	"type": "module",
 	"files": ["dist"],
@@ -46,7 +46,7 @@
 	},
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/arshad-yaseen/zleye.git"
+		"url": "git+https://github.com/arshad-yaseen/zlye.git"
 	},
 	"peerDependencies": {
 		"typescript": ">=4.5.0"
@@ -56,9 +56,18 @@
 			"optional": true
 		}
 	},
-	"homepage": "https://github.com/arshad-yaseen/zleye#readme",
+	"keywords": [
+		"cli",
+		"zod",
+		"typescript",
+		"node",
+		"bun",
+		"command-line",
+		"command-line-interface"
+	],
+	"homepage": "https://github.com/arshad-yaseen/zlye#readme",
 	"bugs": {
-		"url": "https://github.com/arshad-yaseen/zleye/issues"
+		"url": "https://github.com/arshad-yaseen/zlye/issues"
 	},
 	"license": "MIT",
 	"dependencies": {
