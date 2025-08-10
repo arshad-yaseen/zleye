@@ -1,9 +1,9 @@
 import { cli, z } from './src'
 
-const app = cli()
-	.positional('input', z.string().describe('Input file').alias('i'))
-	.positional('output', z.string().describe('Output file').alias('o'))
-	.option('config', z.string().describe('Config file').alias('c'))
+const program = cli()
+	.option('count', z.number().min(1))
+	.option('name', z.string().optional())
+	.positional('numbers', z.array(z.number().positive()))
 
-const result = app.parse()
+const result = program.parse()
 console.log(result)

@@ -1,22 +1,23 @@
 # Zlye
 
-A beautiful, type-safe CLI parser with Zod-like schema validation for Node.js applications.
+A powerful, type-safe CLI parser for Node.js applications with a Zod-like schema-based approach. Build beautiful command-line interfaces with full TypeScript support, automatic help generation, and comprehensive validation.
 
 ## Features
 
-- 🔒 **Type-safe** - Full TypeScript support with complete type inference
-- 🎯 **Zod-inspired API** - Familiar schema validation with method chaining
+- 🔧 **Type-safe schema validation** - Define your CLI options with strong typing
+- 🎨 **Automatic help generation** - Beautiful, colorized help messages
+- 🌳 **Nested commands** - Support for subcommands with their own options
+- 🔄 **Schema transformations** - Transform and validate input data
+- 📝 **Rich option types** - String, number, boolean, array, and object support
 - 🚀 **Zero dependencies** - Lightweight and fast
-- 🎨 **Beautiful help text** - Colorized and styled output
-- 🔧 **Flexible parsing** - Support for flags, positional args, and subcommands
-- ⚡ **Transform & validate** - Built-in validation with custom transformers
+- 💫 **Intuitive API** - Familiar Zod-like syntax
 
 ## Installation
 
 ```bash
 npm install zlye
 # or
-yarn add zlye
+bun install zlye
 # or
 pnpm add zlye
 ```
@@ -26,23 +27,17 @@ pnpm add zlye
 ```typescript
 import { cli, z } from 'zlye'
 
-const options = cli()
+const program = cli()
   .name('my-app')
   .version('1.0.0')
-  .description('A sample CLI application')
-  .option('port', z.number().min(1).max(65535).default(3000)
-    .describe('Port to listen on')
-    .alias('p'))
-  .option('host', z.string().default('localhost')
-    .describe('Host to bind to'))
-  .option('verbose', z.boolean()
-    .describe('Enable verbose logging')
-    .alias('v'))
-  .parse()
+  .description('A simple CLI application')
+  .option('verbose', z.boolean().describe('Enable verbose output'))
+  .option('output', z.string().describe('Output file path'))
 
-console.log(`Server starting on ${options.host}:${options.port}`)
-if (options.verbose) {
-  console.log('Verbose logging enabled')
+const result = program.parse()
+if (result) {
+  console.log('Options:', result.options)
+  console.log('Arguments:', result.positionals)
 }
 ```
 
@@ -51,65 +46,95 @@ if (options.verbose) {
 ### String Schema
 
 ```typescript
+import { z } from 'zlye'
+
+// Basic string
 z.string()
-  .min(3)                    // Minimum length
-  .max(20)                   // Maximum length
-  .regex(/^[a-z]+$/)         // Pattern validation
-  .choices(['dev', 'prod'])  // Enum choices
-  .describe('Environment')   // Help description
-  .alias('e')               // Short flag alias
-  .example('dev')           // Example value
-  .optional()               // Make optional
-  .default('dev')           // Default value
+
+// String with constraints
+z.string()
+  .min(3)                                    // Minimum length
+  .max(50)                                   // Maximum length  
+  .regex(/^[a-z]+$/, 'Must be lowercase')    // Pattern matching
+  .choices(['red', 'green', 'blue'])         // Predefined choices
+  .describe('Color selection')               // Description for help
+  .alias('c')                                // Short flag alias
+  .example('red')                            // Example value
+  .default('blue')                           // Default value
+  .optional()                                // Make optional
 ```
 
 ### Number Schema
 
 ```typescript
+// Basic number
 z.number()
-  .min(0)           // Minimum value
-  .max(100)         // Maximum value
-  .int()            // Integer only
-  .positive()       // Must be positive
-  .negative()       // Must be negative
-  .default(42)      // Default value
+
+// Number with constraints
+z.number()
+  .min(0)                    // Minimum value
+  .max(100)                  // Maximum value
+  .int()                     // Must be integer
+  .positive()                // Must be positive
+  .negative()                // Must be negative
+  .describe('Port number')
+  .default(3000)
 ```
 
 ### Boolean Schema
 
 ```typescript
+// Boolean flags
 z.boolean()
-  .default(false)   // Default value
-  .describe('Enable feature')
+  .describe('Enable debug mode')
+  .alias('d')
+  .default(false)
 ```
 
 ### Array Schema
 
 ```typescript
+// Array of strings
 z.array(z.string())
-  .min(1)           // Minimum items
-  .max(5)           // Maximum items
-  .default(['a'])   // Default array
-```
+  .min(1)                    // Minimum items
+  .max(5)                    // Maximum items
+  .describe('List of files')
 
-Supports comma-separated parsing: `--tags "red,green,blue"`
+// Array of numbers
+z.array(z.number().positive())
+  .describe('List of port numbers')
+
+// Arrays can be provided as comma-separated values:
+// --files file1.txt,file2.txt,file3.txt
+// Or as multiple flags:
+// --files file1.txt --files file2.txt
+```
 
 ### Object Schema
 
 ```typescript
+// Nested object configuration
 z.object({
-  name: z.string(),
-  age: z.number().int().positive(),
-  active: z.boolean().default(true)
+  host: z.string().default('localhost'),
+  port: z.number().min(1).max(65535).default(3000),
+  ssl: z.boolean().default(false)
 })
+.describe('Server configuration')
+
+// Usage: --server.host=example.com --server.port=8080 --server.ssl
 ```
 
-### Transform & Custom Validation
+### Schema Transformations
 
 ```typescript
-z.string()
-  .transform(s => s.toUpperCase())
-  .transform(s => new Date(s))
+// Transform string to uppercase
+z.string().transform(s => s.toUpperCase())
+
+// Parse JSON string to object
+z.string().transform(s => JSON.parse(s))
+
+// Convert string to number
+z.string().regex(/^\d+$/).transform(s => parseInt(s))
 ```
 
 ## CLI Configuration
@@ -119,221 +144,306 @@ z.string()
 ```typescript
 import { cli, z } from 'zlye'
 
-const app = cli()
-  .name('myapp')              // CLI name
-  .version('1.0.0')           // Version string
-  .description('My app')      // Description
-  .usage('myapp [options]')   // Custom usage
-  .example([                  // Usage examples
-    'myapp --port 3000',
-    'myapp --host 0.0.0.0 --verbose'
+const program = cli()
+  .name('myapp')                           // Program name
+  .version('2.1.0')                        // Version string
+  .description('My awesome CLI tool')      // Description
+  .usage('myapp [command] [options]')      // Custom usage string
+  .example([                               // Usage examples
+    'myapp --verbose',
+    'myapp build --output dist/'
   ])
 ```
 
-### Options
+### Adding Options
 
 ```typescript
-const app = cli()
+const program = cli()
   .option('config', z.string()
-    .describe('Path to config file')
+    .describe('Path to configuration file')
     .alias('c')
-    .example('/path/to/config.json'))
-  .option('workers', z.number().int().positive()
-    .describe('Number of worker processes')
-    .default(4))
+    .example('./config.json')
+  )
+  .option('port', z.number()
+    .min(1024)
+    .max(65535)
+    .describe('Server port')
+    .default(3000)
+  )
+  .option('features', z.array(z.string())
+    .describe('List of features to enable')
+  )
 ```
 
 ### Positional Arguments
 
 ```typescript
-const app = cli()
+// Simple positional arguments
+const program = cli()
   .positional('input', z.string().describe('Input file'))
-  .positional('output', z.string().optional().describe('Output file'))
-  
-const result = app.parse()
-// Access via parse() return value and ...args in action functions
+  .positional('output', z.string().describe('Output file').optional())
+
+// Advanced positional with validation
+const program = cli()
+  .positional('command', z.string()
+    .choices(['start', 'stop', 'restart'])
+    .describe('Action to perform')
+  )
 ```
 
-## Commands
+## Commands and Subcommands
 
-Create rich subcommand interfaces:
+### Defining Commands
 
 ```typescript
 import { cli, z } from 'zlye'
 
-const app = cli()
-  .name('git-like')
-  .version('1.0.0')
+const program = cli()
+  .name('docker-cli')
+  .description('Container management tool')
 
-// Add command
-app.command('add', {
-  all: z.boolean().alias('A').describe('Add all files'),
-  force: z.boolean().alias('f').describe('Force add'),
-  files: z.array(z.string()).describe('Files to add')
-})
-  .description('Add files to staging')
-  .usage('git-like add [options] <files...>')
+// Build command
+program
+  .command('build', {
+    file: z.string()
+      .describe('Dockerfile path')
+      .alias('f')
+      .default('./Dockerfile'),
+    tag: z.string()
+      .describe('Image tag')
+      .alias('t'),
+    'no-cache': z.boolean()
+      .describe('Do not use cache')
+  })
+  .description('Build a Docker image')
+  .usage('docker-cli build [options] <context>')
   .example([
-    'git-like add file.txt',
-    'git-like add --all',
-    'git-like add -f *.js'
+    'docker-cli build .',
+    'docker-cli build --tag myapp:latest .',
+    'docker-cli build --file ./custom.Dockerfile --no-cache .'
   ])
-  .positional('files', z.array(z.string()).min(1))
-  .action((options, ...files) => {
-    console.log('Adding files:', files)
-    console.log('Options:', options)
+  .positional('context', z.string().describe('Build context directory'))
+  .action(async ({ options, positionals }) => {
+    console.log('Building image...')
+    console.log('Options:', options)      // Fully typed!
+    console.log('Context:', positionals[0])
+    
+    // Your build logic here
+    await buildImage(options.file, options.tag, positionals[0])
   })
 
-// Commit command  
-app.command('commit', {
-  message: z.string().alias('m').describe('Commit message'),
-  amend: z.boolean().describe('Amend previous commit')
-})
-  .description('Record changes to repository')
-  .action(async (options) => {
-    if (!options.message) {
-      throw new Error('Commit message required')
-    }
-    console.log(`Committing: ${options.message}`)
+// Run command
+program
+  .command('run', {
+    detach: z.boolean().describe('Run in background').alias('d'),
+    port: z.array(z.string()).describe('Port mapping').alias('p'),
+    volume: z.array(z.string()).describe('Volume mapping').alias('v'),
+    env: z.array(z.string()).describe('Environment variables').alias('e')
+  })
+  .description('Run a container')
+  .positional('image', z.string().describe('Docker image'))
+  .positional('command', z.string().describe('Command to run').optional())
+  .action(({ options, positionals }) => {
+    console.log('Starting container...')
+    // Your run logic here
   })
 
-app.parse()
+program.parse()
 ```
 
-### Command Help
+### Complex Example: Git-like CLI
 
-Each command gets its own help:
+```typescript
+import { cli, z } from 'zlye'
 
-```bash
-$ myapp add --help
-Usage: myapp add [options] <files...>
+const git = cli()
+  .name('git')
+  .version('2.0.0')
+  .description('Distributed version control system')
 
-  Add files to staging
+// git add
+git.command('add', {
+  all: z.boolean().alias('A').describe('Add all files'),
+  force: z.boolean().alias('f').describe('Force add ignored files'),
+  verbose: z.boolean().alias('v').describe('Be verbose')
+})
+.description('Add file contents to the index')
+.positional('files', z.string().describe('Files to add').optional())
+.example([
+  'git add file.txt',
+  'git add --all',
+  'git add src/ --verbose'
+])
+.action(({ options, positionals }) => {
+  if (options.all) {
+    console.log('Adding all files...')
+  } else {
+    console.log(`Adding files: ${positionals.join(', ')}`)
+  }
+})
 
-Arguments:
-  <files>  Files to add
+// git commit
+git.command('commit', {
+  message: z.string()
+    .alias('m')
+    .describe('Commit message')
+    .min(1, 'Message cannot be empty'),
+  amend: z.boolean().describe('Amend previous commit'),
+  'sign-off': z.boolean().describe('Add Signed-off-by line')
+})
+.description('Record changes to the repository')
+.example([
+  'git commit -m "Initial commit"',
+  'git commit --amend -m "Updated commit"'
+])
+.action(({ options }) => {
+  console.log(`Committing with message: ${options.message}`)
+})
 
-Flags:
-  -A, --all     Add all files
-  -f, --force   Force add
-  -h, --help    Display this menu and exit
+// git push
+git.command('push', {
+  force: z.boolean().alias('f').describe('Force push'),
+  'set-upstream': z.boolean().alias('u').describe('Set upstream branch'),
+  tags: z.boolean().describe('Push tags')
+})
+.positional('remote', z.string().describe('Remote name').default('origin'))
+.positional('branch', z.string().describe('Branch name').optional())
+.action(({ options, positionals }) => {
+  const [remote, branch] = positionals
+  console.log(`Pushing to ${remote}${branch ? `/${branch}` : ''}`)
+})
 
-Examples:
-  myapp add file.txt
-  myapp add --all  
-  myapp add -f *.js
+git.parse()
 ```
 
 ## Advanced Usage
 
-### Custom Parsing Logic
+### Custom Validation
 
 ```typescript
-const schema = z.object({
-  database: z.object({
-    host: z.string().default('localhost'),
-    port: z.number().default(5432),
-    ssl: z.boolean().default(false)
-  }),
-  redis: z.object({
-    url: z.string().default('redis://localhost:6379')
+import { z } from 'zlye'
+
+// Email validation
+z.string()
+  .regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Must be a valid email')
+
+// URL validation  
+z.string()
+  .regex(/^https?:\/\/.+/, 'Must be a valid URL')
+
+// File path validation
+z.string()
+  .transform(path => {
+    if (!fs.existsSync(path)) {
+      throw new Error(`File not found: ${path}`)
+    }
+    return path
   })
-})
-
-const app = cli()
-  .option('database', schema.shape.database)
-  .option('redis', schema.shape.redis)
 ```
 
-### Environment-based Defaults
+### Environment Variable Integration
 
 ```typescript
-const app = cli()
-  .option('port', z.number()
-    .default(parseInt(process.env.PORT || '3000'))
-    .describe('Server port'))
-  .option('host', z.string()
-    .default(process.env.HOST || 'localhost')
-    .describe('Server host'))
-```
-
-### File Path Validation
-
-```typescript
-import { existsSync } from 'fs'
-import { resolve } from 'path'
-
-const app = cli()
-  .option('config', z.string()
-    .transform(path => resolve(path))
-    .transform(path => {
-      if (!existsSync(path)) {
-        throw new Error(`Config file not found: ${path}`)
-      }
-      return path
+const program = cli()
+  .option('apiKey', z.string()
+    .describe('API key for authentication')
+    .default(process.env.API_KEY || '')
+    .transform(key => {
+      if (!key) throw new Error('API key is required')
+      return key
     })
-    .describe('Configuration file path'))
+  )
 ```
 
-## Type Inference
-
-Zlye provides complete type safety:
+### Configuration File Support
 
 ```typescript
-const app = cli()
-  .option('port', z.number().default(3000))
-  .option('host', z.string().optional())
-  .option('ssl', z.boolean())
+import fs from 'fs'
 
-const options = app.parse()
-// TypeScript knows:
-// options.port: number
-// options.host: string | undefined  
-// options.ssl: boolean
+const program = cli()
+  .option('config', z.string()
+    .describe('Configuration file path')
+    .default('./config.json')
+    .transform(configPath => {
+      if (!fs.existsSync(configPath)) {
+        throw new Error(`Config file not found: ${configPath}`)
+      }
+      return JSON.parse(fs.readFileSync(configPath, 'utf8'))
+    })
+  )
 ```
 
-### Command Type Inference
+## Help System
 
-```typescript
-import type { InferCommand } from 'zlye'
-
-const deployCommand = app.command('deploy', {
-  env: z.string().choices(['dev', 'staging', 'prod']),
-  force: z.boolean().optional()
-}).action((options) => {
-  // options is fully typed!
-})
-
-type DeployOptions = InferCommand<typeof deployCommand>
-// { env: 'dev' | 'staging' | 'prod', force?: boolean }
-```
-
-## Built-in Help System
-
-Zlye automatically generates beautiful help text:
+Zlye automatically generates beautiful help messages based on your schema definitions:
 
 ```bash
 $ myapp --help
 
-My awesome CLI tool (v1.0.0)
+My awesome CLI tool (v2.1.0)
 
-Usage: myapp <command> [...flags] [...args]
+Usage: myapp [command] [...flags] [...args]
 
 Commands:
-  add      myapp add file.txt        Add files to staging
-  commit                             Record changes to repository  
-  push     myapp push origin main    Upload changes to remote
+  build    docker build .              Build a Docker image
+  run      docker run ubuntu:latest    Run a container
 
-  <command> --help                   Print help text for command.
+  <command> --help                     Print help text for command.
 
 Flags:
-  -c, --config  <val>   Configuration file path
-  -v, --verbose         Enable verbose logging
-  -h, --help            Display this menu and exit
+  -c, --config    <val>     Path to configuration file (default: "./config.json")  
+  -p, --port      <n>       Server port (min: 1024, max: 65535, default: 3000)
+      --features  <val,...> List of features to enable
+  -h, --help                Display this menu and exit
 
 Examples:
-  myapp add --all
-  myapp commit -m "Initial commit"
+  myapp --verbose
+  myapp build --output dist/
+```
+
+### Command-specific Help
+
+```bash
+$ myapp build --help
+
+Usage: myapp build [...flags] <context>
+
+  Build a Docker image
+
+Arguments:
+  <context>  Build context directory
+
+Flags:
+  -f, --file      <val>  Dockerfile path (default: "./Dockerfile")
+  -t, --tag       <val>  Image tag  
+      --no-cache         Do not use cache (default: false)
+  -h, --help             Display this menu and exit
+
+Examples:
+  myapp build .
+  myapp build --tag myapp:latest .
+  myapp build --file ./custom.Dockerfile --no-cache .
+```
+
+## Error Handling
+
+Zlye provides detailed error messages for validation failures:
+
+```bash
+$ myapp --port 99999
+Error: --port must be at most 65535
+
+$ myapp build
+Error: Argument context: context is required
+
+$ myapp --invalid-flag
+Error: Unknown option: --invalid-flag
+
+$ myapp --numbers 2,-10
+Error: Argument numbers: numbers[1] must be positive
+
+$ my-cli --env invalid  
+Error: --env must be one of dev, staging, or prod
 ```
 
 ## API Reference
@@ -342,35 +452,63 @@ Examples:
 
 | Method | Description |
 |--------|-------------|
-| `.name(string)` | Set CLI name |
-| `.version(string)` | Set version |
-| `.description(string)` | Set description |
-| `.usage(string)` | Set custom usage text |
-| `.example(string \| string[])` | Add usage examples |
-| `.option(name, schema)` | Add global option |
-| `.positional(name, schema?)` | Add positional argument |
-| `.command(name, options)` | Create subcommand |
-| `.parse(argv?)` | Parse arguments |
+| `name(string)` | Set program name |
+| `version(string)` | Set version string |  
+| `description(string)` | Set program description |
+| `usage(string)` | Set custom usage string |
+| `example(string \| string[])` | Add usage examples |
+| `option(name, schema)` | Add global option |
+| `positional(name, schema?)` | Add positional argument |
+| `command(name, options)` | Create subcommand |
+| `parse(argv?)` | Parse command line arguments |
 
 ### Schema Methods
 
-All schemas support:
-- `.describe(string)` - Help description
-- `.alias(string)` - Short flag alias  
-- `.example(string)` - Example value
-- `.optional()` - Make optional
-- `.default(value)` - Set default
-- `.transform(fn)` - Transform value
+| Method | Description | Applies To |
+|--------|-------------|------------|
+| `describe(string)` | Add description | All |
+| `alias(string)` | Set short flag alias | All |
+| `example(string)` | Add example value | All |
+| `optional()` | Make optional | All |
+| `default(value)` | Set default value | All |
+| `transform(fn)` | Transform parsed value | All |
+| `min(number)` | Set minimum constraint | String, Number, Array |
+| `max(number)` | Set maximum constraint | String, Number, Array |
+| `regex(pattern, message?)` | Pattern validation | String |
+| `choices(array)` | Restrict to specific values | String |
+| `int()` | Require integer | Number |
+| `positive()` | Require positive number | Number |
+| `negative()` | Require negative number | Number |
 
-### Command Builder Methods
+## Best Practices
 
-| Method | Description |
-|--------|-------------|
-| `.description(string)` | Command description |
-| `.usage(string)` | Custom usage text |
-| `.example(string \| string[])` | Usage examples |
-| `.positional(name, schema?)` | Add positional arg |
-| `.action(fn)` | Set command handler |
+1. **Use descriptive option names**: Prefer `--output-dir` over `--out`
+2. **Provide helpful descriptions**: Users rely on `--help` for guidance  
+3. **Set sensible defaults**: Reduce required configuration
+4. **Use aliases sparingly**: Only for very common options
+5. **Group related options**: Use objects for complex configuration
+6. **Validate early**: Use transforms to catch issues immediately
+7. **Provide examples**: Show real usage patterns in help text
+
+## TypeScript Support
+
+Zlye is built for full type safety:
+
+```typescript
+const program = cli()
+  .option('count', z.number().min(1))
+  .option('name', z.string().optional())
+  .positional('numbers', z.array(z.number().positive()))
+
+const result = program.parse()
+if (result) {
+  // TypeScript knows these types!
+  result.options.count // number  
+  result.options.name  // string | undefined
+  result.options.numbers // number[]
+  result.positionals   // any[]
+}
+```
 
 ## Contributing
 
@@ -378,4 +516,4 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 ## License
 
-MIT © [Your Name]
+MIT License - see [LICENSE](LICENSE) file for details.

@@ -1,5 +1,5 @@
 import pc from 'picocolors'
-import { joinWithAnd } from './utils'
+import { joinWithAnd, joinWithOr } from './utils'
 
 type Prettify<T> = { [K in keyof T]: T[K] } & {}
 
@@ -78,10 +78,10 @@ interface Command<TOptions extends Record<string, Schema> = any> {
 	example?: string | string[]
 	options: TOptions
 	positionals?: PositionalSchema[]
-	action: (
-		options: Prettify<{ [K in keyof TOptions]: TOptions[K]['_output'] }>,
-		...args: string[]
-	) => void | Promise<void>
+	action: (args: {
+		options: Prettify<{ [K in keyof TOptions]: TOptions[K]['_output'] }>
+		positionals: any[]
+	}) => void | Promise<void>
 }
 
 interface CommandBuilder<TOptions extends Record<string, Schema>> {
@@ -90,10 +90,10 @@ interface CommandBuilder<TOptions extends Record<string, Schema>> {
 	example(example: string | string[]): this
 	positional(name: string, schema?: Schema): this
 	action(
-		fn: (
-			options: Prettify<{ [K in keyof TOptions]: TOptions[K]['_output'] }>,
-			...args: string[]
-		) => void | Promise<void>,
+		fn: (args: {
+			options: Prettify<{ [K in keyof TOptions]: TOptions[K]['_output'] }>
+			positionals: any[]
+		}) => void | Promise<void>,
 	): Command<TOptions>
 }
 
@@ -112,10 +112,12 @@ interface CLI<TOptions extends Record<string, Schema> = Record<string, never>> {
 		name: string,
 		options: T,
 	): CommandBuilder<T>
-	parse(argv?: string[]): {
-		options: Prettify<{ [K in keyof TOptions]: TOptions[K]['_output'] }>
-		positionals: string[]
-	}
+	parse(argv?: string[]):
+		| {
+				options: Prettify<{ [K in keyof TOptions]: TOptions[K]['_output'] }>
+				positionals: any[]
+		  }
+		| undefined
 	_name?: string
 	_version?: string
 	_description?: string
@@ -152,7 +154,7 @@ class StringSchemaImpl<T extends string = string> implements StringSchema<T> {
 
 		if (this._choices && !this._choices.includes(value)) {
 			throw new CLIError(
-				`${path} must be one of: ${joinWithAnd(Array.from(this._choices))}`,
+				`${path} must be one of ${joinWithOr(Array.from(this._choices))}`,
 			)
 		}
 
@@ -663,10 +665,10 @@ class CommandBuilderImpl<TOptions extends Record<string, Schema>>
 	}
 
 	action(
-		fn: (
-			options: Prettify<{ [K in keyof TOptions]: TOptions[K]['_output'] }>,
-			...args: string[]
-		) => void | Promise<void>,
+		fn: (args: {
+			options: Prettify<{ [K in keyof TOptions]: TOptions[K]['_output'] }>
+			positionals: any[]
+		}) => void | Promise<void>,
 	): Command<TOptions> {
 		return {
 			name: this._name,
@@ -807,17 +809,17 @@ class CLIImpl<TOptions extends Record<string, Schema> = Record<string, never>>
 			let commandName: string | undefined
 			let commandOptions: Record<string, Schema> = this._options
 			let commandAction:
-				| ((options: any, ...args: string[]) => void | Promise<void>)
+				| ((options: any, ...args: any[]) => void | Promise<void>)
 				| undefined
 			let commandPositionals: PositionalSchema[] = this._positionals
-			const positionalArgs: string[] = []
+			const positionalArgs: any[] = []
 
 			if (args.length > 0 && !args[0].startsWith('-')) {
 				commandName = args[0]
 				const cmd = this._commands.find((c) => c.name === commandName)
 
 				if (cmd) {
-					commandOptions = { ...this._options, ...cmd.options }
+					commandOptions = cmd.options
 					commandPositionals = cmd.positionals || []
 					commandAction = cmd.action
 					args = args.slice(1)
@@ -897,7 +899,7 @@ class CLIImpl<TOptions extends Record<string, Schema> = Record<string, never>>
 				parsed[key] = schema.parse(rawOptions[key], `--${key}`)
 			}
 
-			const parsedPositionals: string[] = []
+			const parsedPositionals: any[] = []
 			if (commandPositionals.length > 0) {
 				for (let i = 0; i < commandPositionals.length; i++) {
 					const positional = commandPositionals[i]
@@ -924,13 +926,17 @@ class CLIImpl<TOptions extends Record<string, Schema> = Record<string, never>>
 			}
 
 			if (commandAction) {
-				const result = commandAction(parsed, ...positionalArgs)
+				const result = commandAction({
+					options: parsed,
+					positionals: positionalArgs,
+				})
 				if (result instanceof Promise) {
 					result.catch((err) => {
 						this.showError(err)
 						process.exit(1)
 					})
 				}
+				return undefined
 			}
 
 			return {
@@ -1062,10 +1068,9 @@ class CLIImpl<TOptions extends Record<string, Schema> = Record<string, never>>
 			console.log()
 		}
 
-		const allOptions = { ...this._options, ...command.options }
-		if (Object.keys(allOptions).length > 0) {
+		if (Object.keys(command.options).length > 0) {
 			console.log(pc.bold('Flags:'))
-			this.showOptionsHelp(allOptions)
+			this.showOptionsHelp(command.options)
 			console.log()
 		}
 
@@ -1223,14 +1228,3 @@ class CLIImpl<TOptions extends Record<string, Schema> = Record<string, never>>
 export function cli(): CLI<Record<string, never>> {
 	return new CLIImpl<Record<string, never>>()
 }
-
-export type InferCommand<T extends Command> = T extends Command<infer TOptions>
-	? Prettify<{ [K in keyof TOptions]: TOptions[K]['_output'] }>
-	: never
-
-export type InferCLI<T extends CLI> = T extends CLI<infer TOptions>
-	? {
-			options: Prettify<{ [K in keyof TOptions]: TOptions[K]['_output'] }>
-			positionals: any[]
-		}
-	: never
