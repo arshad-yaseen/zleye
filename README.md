@@ -312,13 +312,13 @@ program
   })
 
 program.parse()
+```
 
 ### Important Notes
 
 - You can have multiple commands in your CLI application
 - You can have both global options and commands in the same program
 - When a command executes and you have both options and a command defined, the result of `program.parse()` will be `undefined` - the command's options are available through the action callback parameters instead
-```
 
 ## Advanced Features
 
