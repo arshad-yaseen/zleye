@@ -1,10 +1,21 @@
+import fs from 'node:fs'
 import { cli, z } from './src'
 
-// const program = cli().positional('count', z.array(z.number().negative()))
-// const program = cli().option('count', z.array(z.number().negative()))
 const program = cli().option(
-	'count',
-	z.array(z.string().choices(['dev', 'staging', 'prod'])),
+	'config',
+	z
+		.string()
+		.describe('Configuration file path')
+		.default('./config.json')
+		.transform((configPath) => {
+			if (!fs.existsSync(configPath)) {
+				throw new Error(`Config file not found: ${configPath}`)
+			}
+			return JSON.parse(fs.readFileSync(configPath, 'utf8')) as Record<
+				string,
+				any
+			>
+		}),
 )
 
 const result = program.parse()
