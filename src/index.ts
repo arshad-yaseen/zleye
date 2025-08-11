@@ -128,9 +128,9 @@ interface CLI<
 		name: string,
 		schema?: Schema<T>,
 	): CLI<TOptions, [...TPositionals, PositionalSchema<T>]>
-	command<T extends Record<string, Schema>>(
+	command<T extends Record<string, Schema> = Record<string, never>>(
 		name: string,
-		options: T,
+		options?: T,
 	): CommandBuilder<T>
 	parse(argv?: string[]):
 		| {
@@ -795,11 +795,11 @@ class CLIImpl<
 		return this as any
 	}
 
-	command<T extends Record<string, Schema>>(
+	command<T extends Record<string, Schema> = Record<string, never>>(
 		name: string,
-		options: T,
+		options?: T,
 	): CommandBuilder<T> {
-		const builder = new CommandBuilderImpl(name, options)
+		const builder = new CommandBuilderImpl(name, options || ({} as T))
 
 		return new Proxy(builder, {
 			get: (target, prop) => {
