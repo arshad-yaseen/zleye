@@ -1,9 +1,20 @@
 import { cli, z } from './src'
 
 const program = cli()
-	.name('@bunup/create')
-	.description('Scaffold a new project with Bunup')
-	.version('0.0.1')
-	.positional('name', z.string().describe('The name of the project'))
+	.option(
+		'minify',
+		z.union(
+			z.boolean(),
+			z
+				.object({
+					nice: z.object(z.string()),
+				})
+				.describe('nice'),
+		),
+	)
+	.rest('entries', z.string())
 
+console.time('time')
 const result = program.parse()
+console.log(result)
+console.timeEnd('time')
