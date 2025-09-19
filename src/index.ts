@@ -1001,7 +1001,7 @@ class HelpFormatter {
 		}
 
 		console.log(
-			`\n  ${pc.cyan('-h, --help'.padEnd(flagsWidth))}${pc.dim('').padEnd(typeWidth)}  ${pc.dim('Display this menu and exit')}`,
+			`  ${pc.cyan('-h, --help'.padEnd(flagsWidth))}${pc.dim('').padEnd(typeWidth)}  ${pc.dim('Display this menu and exit')}`,
 		)
 	}
 
@@ -1035,15 +1035,43 @@ class HelpFormatter {
 					rows.push({ flags: '', type: '', desc: '' })
 				}
 			} else {
+				// Check if it's a boolean with default true that needs grouping
+				const needsNoVersion =
+					schema._type === 'boolean' && schema._defaultValue === true
+
+				if (needsNoVersion) {
+					// Add spacing before the group
+					rows.push({ flags: '', type: '', desc: '' })
+				}
+
 				rows.push({
 					flags: this.getOptionFlags(fullKey, schema),
 					type: this.getOptionType(fullKey, schema),
 					desc: this.getOptionDescription(schema),
 				})
+
+				// If it's a boolean with default true, add the --no- version
+				if (needsNoVersion) {
+					const noDesc = this.generateNoDescription(fullKey, schema)
+					rows.push({
+						flags: `    --no-${fullKey}`,
+						type: pc.dim(''),
+						desc: noDesc,
+					})
+
+					// Add spacing after the group
+					rows.push({ flags: '', type: '', desc: '' })
+				}
 			}
 		}
 
 		return rows
+	}
+
+	private generateNoDescription(key: string, schema: Schema): string {
+		const words = key.split(/(?=[A-Z])|[-_]/).map((w) => w.toLowerCase())
+		const readableKey = words.join(' ')
+		return `Disable ${readableKey}`
 	}
 
 	private buildUnionRows(
@@ -1138,11 +1166,6 @@ class HelpFormatter {
 	private getOptionFlags(key: string, schema: Schema): string {
 		if (schema._type === 'object' && (schema as ObjectSchema)._isAnyKeys) {
 			return `    --${key}.<key>`
-		}
-		if (schema._type === 'boolean' && schema._defaultValue === true) {
-			return schema._alias
-				? `-${schema._alias}, --${key}=false`
-				: `    --${key}=false`
 		}
 		return schema._alias ? `-${schema._alias}, --${key}` : `    --${key}`
 	}
@@ -1402,6 +1425,24 @@ class ArgumentParser {
 		options: Record<string, Schema>,
 		rawOptions: Record<string, any>,
 	): number {
+		if (arg.startsWith('--no-')) {
+			const keyPath = arg.slice(5).split('=')[0]
+			const keys = keyPath.split('.')
+			const mainKey = keys[0]
+
+			const schema = this.getNestedSchema(options[mainKey], keys.slice(1))
+			if (
+				schema &&
+				schema._type === 'boolean' &&
+				schema._defaultValue === true
+			) {
+				this.setNestedValue(rawOptions, keyPath, false, options)
+				return 0
+			}
+
+			throw new CLIError(`Unknown option: ${arg}`)
+		}
+
 		const [keyPath, ...valueParts] = arg.slice(2).split('=')
 		const hasExplicitValue = valueParts.length > 0
 		const explicitValue = hasExplicitValue ? valueParts.join('=') : undefined
@@ -1449,6 +1490,29 @@ class ArgumentParser {
 		}
 
 		return consumed
+	}
+
+	private getNestedSchema(
+		schema: Schema | undefined,
+		nestedKeys: string[],
+	): Schema | undefined {
+		if (!schema) return undefined
+
+		let current = schema
+		for (const key of nestedKeys) {
+			if (current._type === 'object') {
+				const objSchema = current as ObjectSchema
+				if (objSchema._shape?.[key]) {
+					current = objSchema._shape[key]
+				} else {
+					return undefined
+				}
+			} else {
+				return undefined
+			}
+		}
+
+		return current
 	}
 
 	private isBooleanLiteral(value: string): boolean {
