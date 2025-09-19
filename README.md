@@ -1,6 +1,6 @@
 # Zlye ✨
 
-*A delightfully simple, type-safe CLI parser*
+*A delightfully simple, type-safe CLI parser.*
 
 Building command-line tools should be enjoyable. Zlye brings the elegance of Zod's schema validation to CLI parsing, making your applications both powerful and maintainable.
 
