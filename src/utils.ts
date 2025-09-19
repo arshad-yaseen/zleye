@@ -34,7 +34,6 @@ export function getOrdinalNumber(index: number): string {
 		return ordinals[index]
 	}
 
-	// For numbers beyond 20, use the suffix approach
 	const num = index + 1
 	const suffix =
 		num % 10 === 1 && num % 100 !== 11

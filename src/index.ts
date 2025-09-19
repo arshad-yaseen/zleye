@@ -45,39 +45,48 @@ interface BaseSchema<T = any> {
 type Schema<T = any> = BaseSchema<T>
 
 interface StringSchema<T extends string = string> extends BaseSchema<T> {
-	min(length: number): this
-	max(length: number): this
+	min(length: number, message?: string): this
+	max(length: number, message?: string): this
 	regex(pattern: RegExp, message?: string): this
 	choices<const U extends readonly string[]>(
 		choices: U,
 	): StringSchema<U[number]>
 	_minLength?: number
 	_maxLength?: number
+	_minMessage?: string
+	_maxMessage?: string
 	_regex?: { pattern: RegExp; message?: string }
 	_choices?: readonly string[]
 }
 
 interface NumberSchema extends BaseSchema<number> {
-	min(value: number): this
-	max(value: number): this
-	int(): this
-	positive(): this
-	negative(): this
+	min(value: number, message?: string): this
+	max(value: number, message?: string): this
+	int(message?: string): this
+	positive(message?: string): this
+	negative(message?: string): this
 	_min?: number
 	_max?: number
+	_minMessage?: string
+	_maxMessage?: string
 	_isInt?: boolean
+	_intMessage?: string
 	_isPositive?: boolean
+	_positiveMessage?: string
 	_isNegative?: boolean
+	_negativeMessage?: string
 }
 
 interface BooleanSchema extends BaseSchema<boolean> {}
 
 interface ArraySchema<T> extends BaseSchema<T[]> {
-	min(length: number): this
-	max(length: number): this
+	min(length: number, message?: string): this
+	max(length: number, message?: string): this
 	_itemSchema: Schema<T>
 	_minLength?: number
 	_maxLength?: number
+	_minMessage?: string
+	_maxMessage?: string
 }
 
 interface ObjectSchema<T extends Record<string, any> = Record<string, any>>
@@ -257,6 +266,8 @@ class StringSchemaImpl<T extends string = string>
 	_type = 'string' as const
 	_minLength?: number
 	_maxLength?: number
+	_minMessage?: string
+	_maxMessage?: string
 	_regex?: { pattern: RegExp; message?: string }
 	_choices?: readonly string[]
 
@@ -273,13 +284,15 @@ class StringSchemaImpl<T extends string = string>
 
 		if (this._minLength !== undefined && value.length < this._minLength) {
 			throw new CLIError(
-				`${path} must be at least ${this._minLength} characters`,
+				this._minMessage ||
+					`${path} must be at least ${this._minLength} characters`,
 			)
 		}
 
 		if (this._maxLength !== undefined && value.length > this._maxLength) {
 			throw new CLIError(
-				`${path} must be at most ${this._maxLength} characters`,
+				this._maxMessage ||
+					`${path} must be at most ${this._maxLength} characters`,
 			)
 		}
 
@@ -293,13 +306,15 @@ class StringSchemaImpl<T extends string = string>
 		return value as T
 	}
 
-	min(length: number): this {
+	min(length: number, message?: string): this {
 		this._minLength = length
+		this._minMessage = message
 		return this
 	}
 
-	max(length: number): this {
+	max(length: number, message?: string): this {
 		this._maxLength = length
+		this._maxMessage = message
 		return this
 	}
 
@@ -321,9 +336,14 @@ class NumberSchemaImpl extends BaseSchemaImpl<number> implements NumberSchema {
 	_type = 'number' as const
 	_min?: number
 	_max?: number
+	_minMessage?: string
+	_maxMessage?: string
 	_isInt?: boolean
+	_intMessage?: string
 	_isPositive?: boolean
+	_positiveMessage?: string
 	_isNegative?: boolean
+	_negativeMessage?: string
 
 	protected validateValue(value: unknown, path: string): number {
 		const num = Number(value)
@@ -333,50 +353,59 @@ class NumberSchemaImpl extends BaseSchemaImpl<number> implements NumberSchema {
 		}
 
 		if (this._isInt && !Number.isInteger(num)) {
-			throw new CLIError(`${path} must be an integer`)
+			throw new CLIError(this._intMessage || `${path} must be an integer`)
 		}
 
 		if (this._isPositive && num <= 0) {
-			throw new CLIError(`${path} must be positive`)
+			throw new CLIError(this._positiveMessage || `${path} must be positive`)
 		}
 
 		if (this._isNegative && num >= 0) {
-			throw new CLIError(`${path} must be negative`)
+			throw new CLIError(this._negativeMessage || `${path} must be negative`)
 		}
 
 		if (this._min !== undefined && num < this._min) {
-			throw new CLIError(`${path} must be at least ${this._min}`)
+			throw new CLIError(
+				this._minMessage || `${path} must be at least ${this._min}`,
+			)
 		}
 
 		if (this._max !== undefined && num > this._max) {
-			throw new CLIError(`${path} must be at most ${this._max}`)
+			throw new CLIError(
+				this._maxMessage || `${path} must be at most ${this._max}`,
+			)
 		}
 
 		return num
 	}
 
-	min(value: number): this {
+	min(value: number, message?: string): this {
 		this._min = value
+		this._minMessage = message
 		return this
 	}
 
-	max(value: number): this {
+	max(value: number, message?: string): this {
 		this._max = value
+		this._maxMessage = message
 		return this
 	}
 
-	int(): this {
+	int(message?: string): this {
 		this._isInt = true
+		this._intMessage = message
 		return this
 	}
 
-	positive(): this {
+	positive(message?: string): this {
 		this._isPositive = true
+		this._positiveMessage = message
 		return this
 	}
 
-	negative(): this {
+	negative(message?: string): this {
 		this._isNegative = true
+		this._negativeMessage = message
 		return this
 	}
 }
@@ -412,6 +441,8 @@ class ArraySchemaImpl<T> extends BaseSchemaImpl<T[]> implements ArraySchema<T> {
 	_itemSchema: Schema<T>
 	_minLength?: number
 	_maxLength?: number
+	_minMessage?: string
+	_maxMessage?: string
 
 	constructor(itemSchema: Schema<T>) {
 		super()
@@ -422,11 +453,17 @@ class ArraySchemaImpl<T> extends BaseSchemaImpl<T[]> implements ArraySchema<T> {
 		const arr = this.parseToArray(value)
 
 		if (this._minLength !== undefined && arr.length < this._minLength) {
-			throw new CLIError(`${path} must have at least ${this._minLength} items`)
+			throw new CLIError(
+				this._minMessage ||
+					`${path} must have at least ${this._minLength} items`,
+			)
 		}
 
 		if (this._maxLength !== undefined && arr.length > this._maxLength) {
-			throw new CLIError(`${path} must have at most ${this._maxLength} items`)
+			throw new CLIError(
+				this._maxMessage ||
+					`${path} must have at most ${this._maxLength} items`,
+			)
 		}
 
 		return arr.map((item, i) => {
@@ -446,13 +483,15 @@ class ArraySchemaImpl<T> extends BaseSchemaImpl<T[]> implements ArraySchema<T> {
 		return [value]
 	}
 
-	min(length: number): this {
+	min(length: number, message?: string): this {
 		this._minLength = length
+		this._minMessage = message
 		return this
 	}
 
-	max(length: number): this {
+	max(length: number, message?: string): this {
 		this._maxLength = length
+		this._maxMessage = message
 		return this
 	}
 }
@@ -952,13 +991,17 @@ class HelpFormatter {
 		const typeWidth = Math.max(...rows.map((r) => r.type.length))
 
 		for (const { flags, type, desc } of rows) {
-			console.log(
-				`  ${pc.cyan(flags.padEnd(flagsWidth))}${type.padEnd(typeWidth)}  ${desc}`,
-			)
+			if (flags === '' && type === '' && desc === '') {
+				console.log()
+			} else {
+				console.log(
+					`  ${pc.cyan(flags.padEnd(flagsWidth))}${type.padEnd(typeWidth)}  ${desc}`,
+				)
+			}
 		}
 
 		console.log(
-			`  ${pc.cyan('-h, --help'.padEnd(flagsWidth))}${pc.dim('').padEnd(typeWidth)}  ${pc.dim('Display this menu and exit')}`,
+			`\n  ${pc.cyan('-h, --help'.padEnd(flagsWidth))}${pc.dim('').padEnd(typeWidth)}  ${pc.dim('Display this menu and exit')}`,
 		)
 	}
 
@@ -982,8 +1025,15 @@ class HelpFormatter {
 				// @ts-expect-error
 				schema._shape
 			) {
+				if (prefix === '') {
+					rows.push({ flags: '', type: '', desc: '' })
+				}
 				// @ts-expect-error
-				rows.push(...this.buildOptionRows(schema._shape, fullKey))
+				const objectRows = this.buildOptionRows(schema._shape, fullKey)
+				rows.push(...objectRows)
+				if (prefix === '') {
+					rows.push({ flags: '', type: '', desc: '' })
+				}
 			} else {
 				rows.push({
 					flags: this.getOptionFlags(fullKey, schema),
@@ -1010,65 +1060,76 @@ class HelpFormatter {
 			groups.get(type)!.push(s)
 		}
 
-		let isFirst = true
-		for (const [type, groupSchemas] of groups) {
-			if (type === 'object') {
-				for (const objSchema of groupSchemas) {
-					if ((objSchema as ObjectSchema)._isAnyKeys) {
-						const row = {
-							flags: `    --${key}.<key>`,
-							type: this.getOptionType(key, objSchema),
-							desc: this.getOptionDescription(objSchema),
-						}
+		const unionRows: Array<{ flags: string; type: string; desc: string }> = []
 
-						if (!isFirst) {
-							rows.push({
-								flags: `    ${pc.dim('or')}`,
-								type: '',
-								desc: '',
-							})
-						}
+		const objectSchemas = groups.get('object') ?? []
+		const nonObjectGroups = Array.from(groups.entries()).filter(
+			([type]) => type !== 'object',
+		)
 
-						rows.push(row)
-						isFirst = false
-					} else {
-						const objRows = this.buildOptionRows(
-							(objSchema as ObjectSchema<any>)._shape!,
-							key,
-						)
-						for (const row of objRows) {
-							rows.push({
-								...row,
-								desc: isFirst ? `${row.desc} ${pc.dim('(or)')}` : row.desc,
-							})
-						}
-						isFirst = false
-					}
+		for (let i = 0; i < objectSchemas.length; ++i) {
+			const objSchema = objectSchemas[i]
+			if ((objSchema as ObjectSchema)._isAnyKeys) {
+				const row = {
+					flags: `    --${key}.<key>`,
+					type: this.getOptionType(key, objSchema),
+					desc: this.getOptionDescription(objSchema),
 				}
+				unionRows.push(row)
 			} else {
-				for (const s of groupSchemas) {
-					const row = {
-						flags: this.getOptionFlags(key, s),
-						type: this.getOptionType(key, s),
-						desc: this.getOptionDescription(s),
-					}
+				const objRows = this.buildOptionRows(
+					(objSchema as ObjectSchema<any>)._shape!,
+					key,
+				)
+				unionRows.push(...objRows)
+			}
 
-					if (!isFirst) {
-						rows.push({
-							flags: `    ${pc.dim('or')}`,
-							type: '',
-							desc: '',
-						})
-					}
-
-					rows.push(row)
-					isFirst = false
-				}
+			if (i < objectSchemas.length - 1) {
+				unionRows.push({
+					flags: `    ${pc.dim('or')}`,
+					type: '',
+					desc: '',
+				})
 			}
 		}
 
-		if (schema._description && rows.length > 0) {
-			rows[0].desc = `${schema._description} ${rows[0].desc ? `- ${rows[0].desc}` : ''}`
+		if (objectSchemas.length > 0 && nonObjectGroups.length > 0) {
+			unionRows.push({
+				flags: `    ${pc.dim('or')}`,
+				type: '',
+				desc: '',
+			})
+		}
+
+		let isFirstNonObject = true
+		for (const [type, groupSchemas] of nonObjectGroups) {
+			for (let i = 0; i < groupSchemas.length; ++i) {
+				const s = groupSchemas[i]
+				const row = {
+					flags: this.getOptionFlags(key, s),
+					type: this.getOptionType(key, s),
+					desc: this.getOptionDescription(s),
+				}
+				if (!isFirstNonObject) {
+					unionRows.push({
+						flags: `    ${pc.dim('or')}`,
+						type: '',
+						desc: '',
+					})
+				}
+				unionRows.push(row)
+				isFirstNonObject = false
+			}
+		}
+
+		if (schema._description && unionRows.length > 0) {
+			unionRows[0].desc = `${schema._description} ${unionRows[0].desc ? `- ${unionRows[0].desc}` : ''}`
+		}
+
+		if (unionRows.length > 0) {
+			rows.push({ flags: '', type: '', desc: '' })
+			rows.push(...unionRows)
+			rows.push({ flags: '', type: '', desc: '' })
 		}
 
 		return rows
@@ -1114,6 +1175,11 @@ class HelpFormatter {
 	private getOptionDescription(schema: Schema): string {
 		const parts: string[] = []
 		if (schema._description) parts.push(schema._description)
+
+		// Add example to description
+		if (schema._example) {
+			parts.push(pc.dim(`Example: ${schema._example}`))
+		}
 
 		const constraints = this.getConstraints(schema)
 		if (constraints) parts.push(pc.dim(`(${constraints})`))
