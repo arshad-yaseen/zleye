@@ -1,7 +1,7 @@
 {
 	"name": "zlye",
 	"description": "A type-safe CLI parser with a Zod-like schema validation.",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"type": "module",
 	"files": ["dist"],
 	"module": "./dist/index.js",
