@@ -6,43 +6,10 @@ export function joinWithOr(items: string[]): string {
 	return new Intl.ListFormat('en', { type: 'disjunction' }).format(items)
 }
 
-export function getOrdinalNumber(index: number): string {
-	const ordinals = [
-		'first',
-		'second',
-		'third',
-		'fourth',
-		'fifth',
-		'sixth',
-		'seventh',
-		'eighth',
-		'ninth',
-		'tenth',
-		'eleventh',
-		'twelfth',
-		'thirteenth',
-		'fourteenth',
-		'fifteenth',
-		'sixteenth',
-		'seventeenth',
-		'eighteenth',
-		'nineteenth',
-		'twentieth',
-	]
-
-	if (index < ordinals.length) {
-		return ordinals[index]
+export function processExit(code: number, error?: unknown): void {
+	if (!process.env.NO_EXIT) {
+		process.exit(code)
+	} else if (error) {
+		throw error
 	}
-
-	const num = index + 1
-	const suffix =
-		num % 10 === 1 && num % 100 !== 11
-			? 'st'
-			: num % 10 === 2 && num % 100 !== 12
-				? 'nd'
-				: num % 10 === 3 && num % 100 !== 13
-					? 'rd'
-					: 'th'
-
-	return `${num}${suffix}`
 }

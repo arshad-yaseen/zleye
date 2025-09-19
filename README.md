@@ -11,7 +11,6 @@ Building command-line tools should be enjoyable. Zlye brings the elegance of Zod
 - 🔧 **Full TypeScript Support** - Complete type safety from input to output
 - ✨ **Effortless Validation** - Rich error messages that guide your users
 - 🚀 **Union Types Support** - Handle complex option types with ease
-- 🔄 **Variadic Arguments** - Support for rest parameters and flexible argument handling
 
 ## Installation
 
@@ -56,10 +55,11 @@ Commands:
   <command> --help                     Print help text for command.
 
 Flags:
-  -c, --config    <val>     Path to configuration file (default: "./config.json")
-  -p, --port      <n>       Server port (min: 1024, max: 65535, default: 3000)
-      --features  <val,...> List of features to enable
-  -h, --help                Display this menu and exit
+  -c, --config    <val>           Path to configuration file (default: "./config.json")
+  -p, --port      <n>             Server port (min: 1024, max: 65535, default: 3000)
+      --features  <val,...>       List of features to enable
+      --mode      <dev|test|prod> Select mode
+  -h, --help                      Display this menu and exit
 
 Examples:
   myapp --verbose
@@ -921,7 +921,7 @@ program
     console.log(`Deploying ${app} to ${options.environment}`)
 
     if (options.force) {
-      console.log('⚠️  Force mode enabled - skipping safety checks')
+      console.log('Force mode enabled - skipping safety checks')
     }
 
     // Perform deployment...

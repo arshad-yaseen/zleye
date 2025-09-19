@@ -1,5 +1,5 @@
 import pc from 'picocolors'
-import { joinWithAnd, joinWithOr } from './utils'
+import { joinWithAnd, joinWithOr, processExit } from './utils'
 
 type Prettify<T> = { [K in keyof T]: T[K] } & {}
 type ExtractPositionalType<T> = T extends PositionalSchema<infer U> ? U : never
@@ -1775,7 +1775,7 @@ class CLIImpl<
 			return result
 		} catch (error) {
 			this.formatter.showError(error)
-			process.exit(1)
+			processExit(1, error)
 		}
 	}
 
@@ -1802,7 +1802,7 @@ class CLIImpl<
 		if (!this._version) return false
 		if (args.includes('--version') || args.includes('-v')) {
 			console.log(this._version)
-			process.exit(0)
+			processExit(0)
 		}
 		return false
 	}
@@ -1822,7 +1822,9 @@ class CLIImpl<
 			this.formatter.showHelp()
 		}
 
-		process.exit(0)
+		processExit(0)
+
+		return true
 	}
 
 	private extractCommand(args: string[]): {
@@ -1866,7 +1868,7 @@ class CLIImpl<
 		if (result instanceof Promise) {
 			result.catch((err) => {
 				this.formatter.showError(err)
-				process.exit(1)
+				processExit(1, err)
 			})
 		}
 
