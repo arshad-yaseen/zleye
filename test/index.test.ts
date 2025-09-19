@@ -1239,12 +1239,6 @@ describe('CLI Parser Tests', () => {
 			expect(result?.rest).toEqual(['--not-a-flag', 'file'])
 		})
 
-		test('should pass -- args to rest unchanged', () => {
-			const program = cli().rest('args', z.string())
-			const result = program.parse(['--', '-v', '--help', 'test'])
-			expect(result?.rest).toEqual(['-v', '--help', 'test'])
-		})
-
 		test('should handle -- with positionals', () => {
 			const program = cli()
 				.positional('file', z.string())

@@ -1,3 +1,4 @@
+import { pathToFileURL } from 'bun'
 import pc from 'picocolors'
 import { joinWithAnd, joinWithOr, processExit } from './utils'
 
@@ -599,7 +600,14 @@ class UnionSchemaImpl<T extends readonly Schema[]>
 	protected validateValue(value: unknown, path: string): UnionToTuple<T> {
 		const errors: { schema: Schema; error: string; specificity: number }[] = []
 
-		for (const schema of this._schemas) {
+		// Sort schemas to try number before string (for better type inference)
+		const sortedSchemas = [...this._schemas].sort((a, b) => {
+			if (a._type === 'number' && b._type === 'string') return -1
+			if (a._type === 'string' && b._type === 'number') return 1
+			return 0
+		})
+
+		for (const schema of sortedSchemas) {
 			try {
 				return schema.parse(value, path)
 			} catch (error) {
@@ -685,11 +693,19 @@ class PositionalSchemaImpl<T = string>
 		super()
 		this._name = name
 		this._baseSchema = schema || (new StringSchemaImpl() as any)
-		this._description = schema?._description
+		// Copy over optional and default settings
+		this._isOptional = this._baseSchema._isOptional
+		this._defaultValue = this._baseSchema._defaultValue
+		this._description = this._baseSchema._description
 	}
 
 	protected validateValue(value: unknown, path: string): T {
 		return this._baseSchema.parse(value, path || this._name)
+	}
+
+	parse(value: unknown, path = 'value'): T {
+		// Use base schema's parsing directly to preserve optional/default behavior
+		return this._baseSchema.parse(value, path)
 	}
 }
 
@@ -1293,7 +1309,7 @@ class ArgumentParser {
 			if (arg.startsWith('--')) {
 				const consumed = this.parseFlag(arg, args, i, options, rawOptions)
 				i += consumed
-			} else if (arg.startsWith('-')) {
+			} else if (arg.startsWith('-') && !this.looksLikeNegativeNumber(arg)) {
 				const consumed = this.parseAlias(arg, args, i, options, rawOptions)
 				i += consumed
 			} else {
@@ -1317,6 +1333,12 @@ class ArgumentParser {
 		}
 
 		return { parsed, positionalArgs, rawArgs }
+	}
+
+	private looksLikeNegativeNumber(arg: string): boolean {
+		if (!arg.startsWith('-')) return false
+		const rest = arg.slice(1)
+		return /^\d/.test(rest) // Starts with digit after '-'
 	}
 
 	private parseOptionWithSchema(
@@ -1462,7 +1484,11 @@ class ArgumentParser {
 			let value: any
 			if (hasExplicitValue) {
 				value = explicitValue
-			} else if (index + 1 < args.length && !args[index + 1].startsWith('-')) {
+			} else if (
+				index + 1 < args.length &&
+				(!args[index + 1].startsWith('-') ||
+					this.looksLikeNegativeNumber(args[index + 1]))
+			) {
 				value = args[index + 1]
 				consumed = 1
 			} else if (expectsValue === 'union') {
