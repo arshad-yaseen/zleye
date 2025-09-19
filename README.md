@@ -869,19 +869,19 @@ const program = cli()
 
 ### Best Practices
 
-1. **Use Descriptive Error Messages**: Always provide clear, actionable error messages in your custom validations.
+- **Use Descriptive Error Messages**: Always provide clear, actionable error messages in your custom validations.
 
-2. **Leverage Defaults**: Set sensible defaults to improve user experience.
+- **Leverage Defaults**: Set sensible defaults to improve user experience.
 
-3. **Group Related Options**: Use objects to group related configuration options.
+- **Group Related Options**: Use objects to group related configuration options.
 
-4. **Provide Examples**: Use `.example()` to show users how to use your CLI.
+- **Provide Examples**: Use `.example()` to show users how to use your CLI.
 
-5. **Use Aliases Sparingly**: Only add aliases for frequently used options to avoid clutter.
+- **Use Aliases Sparingly**: Only add aliases for frequently used options to avoid clutter.
 
-6. **Validate Early**: Use schema validation instead of checking values in your application logic.
+- **Validate Early**: Use schema validation instead of checking values in your application logic.
 
-7. **Handle Async Operations**: Use async action functions for commands that perform I/O operations.
+- **Handle Async Operations**: Use async action functions for commands that perform I/O operations.
 
 ```typescript
 // Good: Comprehensive CLI with clear structure
