@@ -6,12 +6,12 @@ Building command-line tools should be enjoyable. Zlye brings the elegance of Zod
 
 ## Why Developers Love Zlye
 
-🎨 **Beautiful Help Messages** - Automatically generated, colorized, and intuitive
-💫 **Zero Learning Curve** - If you know Zod, you already know Zlye
-🔧 **Full TypeScript Support** - Complete type safety from input to output
-✨ **Effortless Validation** - Rich error messages that guide your users
-🚀 **Union Types Support** - Handle complex option types with ease
-🔄 **Variadic Arguments** - Support for rest parameters and flexible argument handling
+- 🎨 **Beautiful Help Messages** - Automatically generated, colorized, and intuitive
+- 💫 **Zero Learning Curve** - If you know Zod, you already know Zlye
+- 🔧 **Full TypeScript Support** - Complete type safety from input to output
+- ✨ **Effortless Validation** - Rich error messages that guide your users
+- 🚀 **Union Types Support** - Handle complex option types with ease
+- 🔄 **Variadic Arguments** - Support for rest parameters and flexible argument handling
 
 ## Installation
 
