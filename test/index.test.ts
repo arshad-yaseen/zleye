@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'bun:test'
 import { cli, z } from '../src'
 
 describe('CLI Parser Tests', () => {
@@ -76,7 +76,7 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--name', 'ab']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: --name must be at least 3 characters]`,
+				`"--name must be at least 3 characters"`,
 			)
 		})
 
@@ -91,7 +91,7 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--name', 'toolong']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: --name must be at most 5 characters]`,
+				`"--name must be at most 5 characters"`,
 			)
 		})
 
@@ -106,7 +106,7 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--name', 'Test123']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: --name must match pattern /^[a-z]+$/]`,
+				`"--name must match pattern /^[a-z]+$/"`,
 			)
 		})
 
@@ -121,7 +121,7 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--mode', 'test']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: --mode must be one of dev or prod]`,
+				`"--mode must be one of dev or prod"`,
 			)
 		})
 
@@ -196,7 +196,7 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--count', 'abc']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: --count must be a number, received string]`,
+				`"--count must be a number, received string"`,
 			)
 		})
 
@@ -204,9 +204,7 @@ describe('CLI Parser Tests', () => {
 			const program = cli().option('port', z.number().min(1024))
 			expect(() =>
 				program.parse(['--port', '80']),
-			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: --port must be at least 1024]`,
-			)
+			).toThrowErrorMatchingInlineSnapshot(`"--port must be at least 1024"`)
 		})
 
 		test('should pass number min validation', () => {
@@ -219,9 +217,7 @@ describe('CLI Parser Tests', () => {
 			const program = cli().option('port', z.number().max(65535))
 			expect(() =>
 				program.parse(['--port', '70000']),
-			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: --port must be at most 65535]`,
-			)
+			).toThrowErrorMatchingInlineSnapshot(`"--port must be at most 65535"`)
 		})
 
 		test('should pass number max validation', () => {
@@ -234,9 +230,7 @@ describe('CLI Parser Tests', () => {
 			const program = cli().option('count', z.number().int())
 			expect(() =>
 				program.parse(['--count', '3.14']),
-			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: --count must be an integer]`,
-			)
+			).toThrowErrorMatchingInlineSnapshot(`"--count must be an integer"`)
 		})
 
 		test('should pass integer validation', () => {
@@ -249,9 +243,7 @@ describe('CLI Parser Tests', () => {
 			const program = cli().option('count', z.number().positive())
 			expect(() =>
 				program.parse(['--count', '0']),
-			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: --count must be positive]`,
-			)
+			).toThrowErrorMatchingInlineSnapshot(`"--count must be positive"`)
 		})
 
 		test('should pass positive number validation', () => {
@@ -264,9 +256,7 @@ describe('CLI Parser Tests', () => {
 			const program = cli().option('offset', z.number().negative())
 			expect(() =>
 				program.parse(['--offset', '0']),
-			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: --offset must be negative]`,
-			)
+			).toThrowErrorMatchingInlineSnapshot(`"--offset must be negative"`)
 		})
 
 		test('should pass negative number validation', () => {
@@ -400,9 +390,7 @@ describe('CLI Parser Tests', () => {
 				.option('file', z.string())
 			expect(() =>
 				program.parse(['--verbose', 'file.txt', '--file', 'other.txt']),
-			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: Unexpected argument: file.txt]`,
-			)
+			).toThrowErrorMatchingInlineSnapshot(`"Unexpected argument: file.txt"`)
 		})
 	})
 
@@ -443,7 +431,7 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--ports', '8080,abc,3000']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: --ports[1] must be a number, received string]`,
+				`"--ports[1] must be a number, received string"`,
 			)
 		})
 
@@ -452,7 +440,7 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--items', 'single']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: --items must have at least 2 items]`,
+				`"--items must have at least 2 items"`,
 			)
 		})
 
@@ -467,7 +455,7 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--items', 'a,b,c']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: --items must have at most 2 items]`,
+				`"--items must have at most 2 items"`,
 			)
 		})
 
@@ -499,9 +487,7 @@ describe('CLI Parser Tests', () => {
 			)
 			expect(() =>
 				program.parse(['--ports', '80,3000']),
-			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: --ports[0] must be at least 1024]`,
-			)
+			).toThrowErrorMatchingInlineSnapshot(`"--ports[0] must be at least 1024"`)
 		})
 
 		test('should trim array items', () => {
@@ -604,7 +590,7 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--server.port', 'abc']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: --server.port must be a number, received string]`,
+				`"--server.port must be a number, received string"`,
 			)
 		})
 
@@ -617,9 +603,7 @@ describe('CLI Parser Tests', () => {
 			)
 			expect(() =>
 				program.parse(['--server.unknown', 'value']),
-			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: Unknown option key: unknown]`,
-			)
+			).toThrowErrorMatchingInlineSnapshot(`"Unknown option key: unknown"`)
 		})
 
 		test('should handle deeply nested objects', () => {
@@ -664,7 +648,7 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--counts.a', 'abc']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: --counts.a must be a number, received string]`,
+				`"--counts.a must be a number, received string"`,
 			)
 		})
 
@@ -783,7 +767,7 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--value', 'hi']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: --value must be at least 5 characters]`,
+				`"--value must be at least 5 characters"`,
 			)
 		})
 
@@ -839,7 +823,7 @@ describe('CLI Parser Tests', () => {
 		test('should reject invalid positional type', () => {
 			const program = cli().positional('count', z.number())
 			expect(() => program.parse(['abc'])).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: Argument "count": must be a number, received string]`,
+				`"Argument "count": must be a number, received string"`,
 			)
 		})
 
@@ -861,7 +845,7 @@ describe('CLI Parser Tests', () => {
 		test('should validate positional constraints', () => {
 			const program = cli().positional('port', z.number().min(1024).max(65535))
 			expect(() => program.parse(['80'])).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: Argument "port": must be at least 1024]`,
+				`"Argument "port": must be at least 1024"`,
 			)
 		})
 
@@ -887,9 +871,7 @@ describe('CLI Parser Tests', () => {
 			const program = cli().positional('file', z.string())
 			expect(() =>
 				program.parse(['file1.txt', 'file2.txt']),
-			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: Unexpected argument: file2.txt]`,
-			)
+			).toThrowErrorMatchingInlineSnapshot(`"Unexpected argument: file2.txt"`)
 		})
 
 		test('should transform positional values', () => {
@@ -909,7 +891,7 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['restart']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: Argument "command": must be one of start or stop]`,
+				`"Argument "command": must be one of start or stop"`,
 			)
 		})
 
@@ -936,7 +918,7 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.positional('output', z.string()),
 			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: Cannot add positional after variadic positional]`,
+				`"Cannot add positional after variadic positional"`,
 			)
 		})
 	})
@@ -965,7 +947,7 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['1', 'abc', '3']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: Argument "counts": counts[1] must be a number, received string]`,
+				`"Argument "counts": counts[1] must be a number, received string"`,
 			)
 		})
 
@@ -983,7 +965,7 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['80', '3000']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: Argument "ports": ports[0] must be at least 1024]`,
+				`"Argument "ports": ports[0] must be at least 1024"`,
 			)
 		})
 
@@ -1019,7 +1001,7 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.rest('more', z.string()),
 			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: Cannot have multiple variadic positionals]`,
+				`"Cannot have multiple variadic positionals"`,
 			)
 		})
 
@@ -1128,9 +1110,7 @@ describe('CLI Parser Tests', () => {
 				.action(() => {})
 			expect(() =>
 				program.parse(['build', '--threads', '0']),
-			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: --threads must be at least 1]`,
-			)
+			).toThrowErrorMatchingInlineSnapshot(`"--threads must be at least 1"`)
 		})
 
 		test('should handle command option defaults', () => {
@@ -1152,9 +1132,7 @@ describe('CLI Parser Tests', () => {
 			program.command('build', {}).action(() => {})
 			expect(() =>
 				program.parse(['unknown']),
-			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: Unknown command: unknown]`,
-			)
+			).toThrowErrorMatchingInlineSnapshot(`"Unknown command: unknown"`)
 		})
 
 		test('should handle async command action', async () => {
@@ -1215,7 +1193,7 @@ describe('CLI Parser Tests', () => {
 		test('should reject unknown alias', () => {
 			const program = cli().option('verbose', z.boolean())
 			expect(() => program.parse(['-x'])).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: Unknown option: -x]`,
+				`"Unknown option: -x"`,
 			)
 		})
 
@@ -1260,15 +1238,13 @@ describe('CLI Parser Tests', () => {
 			const program = cli()
 			expect(() =>
 				program.parse(['--unknown']),
-			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: Unknown option: --unknown]`,
-			)
+			).toThrowErrorMatchingInlineSnapshot(`"Unknown option: --unknown"`)
 		})
 
 		test('should show helpful error for missing required option', () => {
 			const program = cli().option('required', z.string())
 			expect(() => program.parse([])).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: --required is required]`,
+				`"--required is required"`,
 			)
 		})
 
@@ -1277,7 +1253,7 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--port', 'abc']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: --port must be a number, received string]`,
+				`"--port must be a number, received string"`,
 			)
 		})
 
@@ -1285,18 +1261,14 @@ describe('CLI Parser Tests', () => {
 			const program = cli().option('port', z.number().min(1024))
 			expect(() =>
 				program.parse(['--port', '80']),
-			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: --port must be at least 1024]`,
-			)
+			).toThrowErrorMatchingInlineSnapshot(`"--port must be at least 1024"`)
 		})
 
 		test('should show helpful error for invalid choice', () => {
 			const program = cli().option('env', z.string().choices(['dev', 'prod']))
 			expect(() =>
 				program.parse(['--env', 'test']),
-			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: --env must be one of dev or prod]`,
-			)
+			).toThrowErrorMatchingInlineSnapshot(`"--env must be one of dev or prod"`)
 		})
 
 		test('should show helpful error for array item validation', () => {
@@ -1304,14 +1276,14 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--ports', '80,abc,3000']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: --ports[1] must be a number, received string]`,
+				`"--ports[1] must be a number, received string"`,
 			)
 		})
 
 		test('should show helpful error for positional validation', () => {
 			const program = cli().positional('count', z.number())
 			expect(() => program.parse(['abc'])).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: Argument "count": must be a number, received string]`,
+				`"Argument "count": must be a number, received string"`,
 			)
 		})
 
@@ -1319,9 +1291,7 @@ describe('CLI Parser Tests', () => {
 			const program = cli().positional('file', z.string())
 			expect(() =>
 				program.parse(['file1', 'file2']),
-			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: Unexpected argument: file2]`,
-			)
+			).toThrowErrorMatchingInlineSnapshot(`"Unexpected argument: file2"`)
 		})
 	})
 
@@ -1386,6 +1356,7 @@ describe('CLI Parser Tests', () => {
 			])
 
 			expect(result).toEqual({
+				// @ts-expect-error
 				options: {
 					verbose: true,
 					config: undefined,
@@ -1540,6 +1511,7 @@ describe('CLI Parser Tests', () => {
 				'100',
 			])
 
+			// @ts-expect-error
 			expect(result?.options).toEqual({
 				string: 'text',
 				number: 42,
@@ -1650,7 +1622,7 @@ describe('CLI Parser Tests', () => {
 		test('should reject flag that looks like number', () => {
 			const program = cli()
 			expect(() => program.parse(['--123'])).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: Unknown option: --123]`,
+				`"Unknown option: --123"`,
 			)
 		})
 
@@ -1682,9 +1654,7 @@ describe('CLI Parser Tests', () => {
 			)
 			expect(() =>
 				program.parse(['--value.type', 'c']),
-			).toThrowErrorMatchingInlineSnapshot(
-				`[CLIError: --value.type must be one of a]`,
-			)
+			).toThrowErrorMatchingInlineSnapshot(`"--value.type must be one of a"`)
 		})
 
 		test('should handle command returning undefined', () => {
@@ -1722,7 +1692,7 @@ describe('CLI Parser Tests', () => {
 			)
 			expect(() =>
 				program.parse(['--value', 'test']),
-			).toThrowErrorMatchingInlineSnapshot(`[Error: Transform failed]`)
+			).toThrowErrorMatchingInlineSnapshot(`"Transform failed"`)
 		})
 
 		test('should handle circular transform', () => {
@@ -1747,7 +1717,9 @@ describe('CLI Parser Tests', () => {
 			const result2 = program.parse(['--c', '3', '--a', '1', '--b', '2'])
 			const result3 = program.parse(['--b', '2', '--c', '3', '--a', '1'])
 
+			// @ts-expect-error
 			expect(result1?.options).toEqual(result2?.options)
+			// @ts-expect-error
 			expect(result2?.options).toEqual(result3?.options)
 		})
 	})
