@@ -41,7 +41,6 @@ program
 		'deploy-tool deploy --environment=staging --force my-app',
 	])
 	.action(async ({ options, positionals }) => {
-		console.log(options, positionals)
 		const [app] = positionals
 		console.log(`Deploying ${app} to ${options.environment}`)
 

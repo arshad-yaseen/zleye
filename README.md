@@ -48,7 +48,7 @@ $ myapp --help
 
 My awesome CLI tool (v2.1.0)
 
-Usage: myapp [command] [...flags] [...args]
+Usage: myapp <command> [...flags]
 
 Commands:
   build    docker build .              Build a Docker image
@@ -293,7 +293,6 @@ Boolean flags have special behavior - they default to `false` when not provided:
 z.boolean()
   .describe('Enable debug mode')
   .alias('d')
-  .default(false)
 
 // Boolean with true default (creates --no-flag syntax)
 z.boolean()
