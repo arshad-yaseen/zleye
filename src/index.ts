@@ -1,4 +1,3 @@
-import { pathToFileURL } from 'bun'
 import pc from 'picocolors'
 import { joinWithAnd, joinWithOr, processExit } from './utils'
 
@@ -1045,9 +1044,8 @@ class HelpFormatter {
 				const objectRows = this.buildOptionRows(schema._shape, fullKey)
 				rows.push(...objectRows)
 			} else {
-				// Check if it's a boolean with default true that needs grouping
-				const needsNoVersion =
-					schema._type === 'boolean' && schema._defaultValue === true
+				// Check if it's a boolean with default true that needs --no- version
+				const needsNoVersion = this.shouldAddNoVersion(schema)
 
 				rows.push({
 					flags: this.getOptionFlags(fullKey, schema),
@@ -1055,7 +1053,7 @@ class HelpFormatter {
 					desc: this.getOptionDescription(schema),
 				})
 
-				// If it's a boolean with default true, add the --no- version
+				// If it needs --no- version, add it
 				if (needsNoVersion) {
 					const noDesc = this.generateNoDescription(fullKey)
 					rows.push({
@@ -1068,6 +1066,26 @@ class HelpFormatter {
 		}
 
 		return rows
+	}
+
+	private shouldAddNoVersion(schema: Schema): boolean {
+		// Check if it's a boolean with default true
+		if (schema._type === 'boolean' && schema._defaultValue === true) {
+			return true
+		}
+
+		// Check if it's a union containing a boolean with default true
+		if (schema._type === 'union') {
+			const unionSchema = schema as UnionSchema<any>
+			const booleanSchema = unionSchema._schemas.find(
+				(s: any) => s._type === 'boolean',
+			)
+			if (booleanSchema && booleanSchema._defaultValue === true) {
+				return true
+			}
+		}
+
+		return false
 	}
 
 	private generateNoDescription(key: string): string {
@@ -1112,6 +1130,20 @@ class HelpFormatter {
 					key,
 				)
 				unionRows.push(...objRows)
+
+				// Check if object properties need --no- versions
+				const objShape = (objSchema as ObjectSchema<any>)._shape!
+				for (const [propKey, propSchema] of Object.entries(objShape)) {
+					if (this.shouldAddNoVersion(propSchema)) {
+						const fullKey = `${key}.${propKey}`
+						const noDesc = this.generateNoDescription(fullKey)
+						unionRows.push({
+							flags: `    --no-${fullKey}`,
+							type: pc.dim(''),
+							desc: noDesc,
+						})
+					}
+				}
 			}
 		}
 
@@ -1127,6 +1159,17 @@ class HelpFormatter {
 				unionRows.push(row)
 				isFirstNonObject = false
 			}
+		}
+
+		// Check if we need to add --no- version for boolean in union
+		const needsNoVersion = this.shouldAddNoVersion(schema)
+		if (needsNoVersion) {
+			const noDesc = this.generateNoDescription(key)
+			unionRows.push({
+				flags: `    --no-${key}`,
+				type: pc.dim(''),
+				desc: noDesc,
+			})
 		}
 
 		if (schema._description && unionRows.length > 0) {
@@ -1156,7 +1199,13 @@ class HelpFormatter {
 			(schema as StringSchema)._choices?.length
 		) {
 			const choices = (schema as StringSchema)._choices!
-			if (choices.length <= 3) valueType = choices.join('|')
+			// Show all choices, or up to a reasonable limit (e.g., 5)
+			if (choices.length <= 5) {
+				valueType = choices.join('|')
+			} else {
+				// For many choices, show first few with ellipsis
+				valueType = `${choices.slice(0, 4).join('|')}|...`
+			}
 		} else if (schema._type === 'number') {
 			valueType = 'n'
 		} else if (schema._type === 'array') {
@@ -1166,6 +1215,7 @@ class HelpFormatter {
 			(schema as ObjectSchema)._valueSchema
 		) {
 			const valueSchema = (schema as ObjectSchema)._valueSchema!
+			// Recursively get the type for the value schema
 			return this.getOptionType(_key, valueSchema)
 		}
 
@@ -1412,15 +1462,42 @@ class ArgumentParser {
 			const keyPath = arg.slice(5).split('=')[0]
 			const keys = keyPath.split('.')
 			const mainKey = keys[0]
+			const mainSchema = options[mainKey]
 
-			const schema = this.getNestedSchema(options[mainKey], keys.slice(1))
-			if (
-				schema &&
-				schema._type === 'boolean' &&
-				schema._defaultValue === true
-			) {
-				this.setNestedValue(rawOptions, keyPath, false, options)
-				return 0
+			if (!mainSchema) {
+				throw new CLIError(`Unknown option: ${arg}`)
+			}
+
+			// Handle nested paths like --no-minify.css
+			if (keys.length > 1) {
+				// Check if the main schema is a union containing an object with this nested property
+				if (mainSchema._type === 'union') {
+					const unionSchema = mainSchema as UnionSchema<any>
+
+					// Find an object schema in the union that has this nested path with boolean default true
+					for (const s of unionSchema._schemas) {
+						if (s._type === 'object') {
+							const nestedSchema = this.getNestedSchema(s, keys.slice(1))
+							if (nestedSchema && this.shouldHandleNoVersion(nestedSchema)) {
+								this.setNestedValue(rawOptions, keyPath, false, options)
+								return 0
+							}
+						}
+					}
+				} else {
+					// Regular nested schema (not in union)
+					const nestedSchema = this.getNestedSchema(mainSchema, keys.slice(1))
+					if (nestedSchema && this.shouldHandleNoVersion(nestedSchema)) {
+						this.setNestedValue(rawOptions, keyPath, false, options)
+						return 0
+					}
+				}
+			} else {
+				// Simple case: --no-cache
+				if (this.shouldHandleNoVersion(mainSchema)) {
+					this.setNestedValue(rawOptions, keyPath, false, options)
+					return 0
+				}
 			}
 
 			throw new CLIError(`Unknown option: ${arg}`)
@@ -1479,18 +1556,55 @@ class ArgumentParser {
 		return consumed
 	}
 
+	private shouldHandleNoVersion(schema: Schema | undefined): boolean {
+		if (!schema) return false
+
+		if (schema._type === 'boolean' && schema._defaultValue === true) {
+			return true
+		}
+
+		if (schema._type === 'union') {
+			const unionSchema = schema as UnionSchema<any>
+			const booleanSchema = unionSchema._schemas.find(
+				(s: any) => s._type === 'boolean',
+			)
+			if (booleanSchema && booleanSchema._defaultValue === true) {
+				return true
+			}
+		}
+
+		return false
+	}
+
 	private getNestedSchema(
 		schema: Schema | undefined,
 		nestedKeys: string[],
 	): Schema | undefined {
-		if (!schema) return undefined
+		if (!schema || nestedKeys.length === 0) return schema
 
 		let current = schema
+
 		for (const key of nestedKeys) {
 			if (current._type === 'object') {
 				const objSchema = current as ObjectSchema
 				if (objSchema._shape?.[key]) {
 					current = objSchema._shape[key]
+				} else {
+					return undefined
+				}
+			} else if (current._type === 'union') {
+				// For unions, try to find an object schema that has this key
+				const unionSchema = current as UnionSchema<any>
+				const objSchema = unionSchema._schemas.find((s: any) => {
+					if (s._type === 'object') {
+						const obj = s as ObjectSchema
+						return obj._shape?.[key] !== undefined
+					}
+					return false
+				})
+
+				if (objSchema) {
+					current = (objSchema as ObjectSchema)._shape![key]
 				} else {
 					return undefined
 				}

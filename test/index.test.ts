@@ -1723,4 +1723,463 @@ describe('CLI Parser Tests', () => {
 			expect(result2?.options).toEqual(result3?.options)
 		})
 	})
+	describe('--no- prefix with unions containing boolean', () => {
+		test('should handle --no- prefix for union with boolean default true', () => {
+			const program = cli().option(
+				'sourcemap',
+				z.union(
+					z.boolean().default(true).describe('Generate a sourcemap'),
+					z
+						.string()
+						.choices(['none', 'linked', 'inline', 'external'])
+						.describe('Generate a sourcemap with specific type'),
+				),
+			)
+			const result = program.parse(['--no-sourcemap'])
+			expect(result?.options.sourcemap).toBe(false)
+		})
+
+		test('should handle regular flag for union with boolean default true', () => {
+			const program = cli().option(
+				'sourcemap',
+				z.union(
+					z.boolean().default(true),
+					z.string().choices(['none', 'linked', 'inline', 'external']),
+				),
+			)
+			const result = program.parse(['--sourcemap'])
+			expect(result?.options.sourcemap).toBe(true)
+		})
+
+		test('should handle string variant in union with boolean default true', () => {
+			const program = cli().option(
+				'sourcemap',
+				z.union(
+					z.boolean().default(true),
+					z.string().choices(['none', 'linked', 'inline', 'external']),
+				),
+			)
+			const result = program.parse(['--sourcemap', 'inline'])
+			expect(result?.options.sourcemap).toBe('inline')
+		})
+
+		test('should not accept --no- for union with boolean default false', () => {
+			const program = cli().option(
+				'debug',
+				z.union(z.boolean().default(false), z.string()),
+			)
+			expect(() =>
+				program.parse(['--no-debug']),
+			).toThrowErrorMatchingInlineSnapshot(`"Unknown option: --no-debug"`)
+		})
+
+		test('should not accept --no- for union without boolean', () => {
+			const program = cli().option(
+				'mode',
+				z.union(z.string().choices(['dev', 'prod']), z.number()),
+			)
+			expect(() =>
+				program.parse(['--no-mode']),
+			).toThrowErrorMatchingInlineSnapshot(`"Unknown option: --no-mode"`)
+		})
+
+		test('should handle nested union with boolean default true', () => {
+			const program = cli().option(
+				'build',
+				z.object({
+					minify: z.union(
+						z.boolean().default(true),
+						z.object({
+							js: z.boolean(),
+							css: z.boolean(),
+						}),
+					),
+				}),
+			)
+			const result = program.parse(['--no-build.minify'])
+			expect(result?.options.build.minify).toBe(false)
+		})
+
+		test('should handle multiple unions with boolean defaults', () => {
+			const program = cli()
+				.option('cache', z.union(z.boolean().default(true), z.string()))
+				.option('minify', z.union(z.boolean().default(true), z.string()))
+				.option('debug', z.union(z.boolean().default(false), z.string()))
+
+			const result = program.parse(['--no-cache', '--no-minify', '--debug'])
+			expect(result?.options.cache).toBe(false)
+			expect(result?.options.minify).toBe(false)
+			expect(result?.options.debug).toBe(true)
+		})
+	})
+
+	describe('Object with value schema choices', () => {
+		test('should parse object with string choices value schema', () => {
+			const program = cli().option(
+				'env',
+				z.object(z.string().choices(['development', 'production', 'test'])),
+			)
+			const result = program.parse(['--env.NODE_ENV', 'production'])
+			expect(result?.options.env).toEqual({ NODE_ENV: 'production' })
+		})
+
+		test('should validate choices in object value schema', () => {
+			const program = cli().option(
+				'env',
+				z.object(z.string().choices(['development', 'production'])),
+			)
+			expect(() =>
+				program.parse(['--env.NODE_ENV', 'invalid']),
+			).toThrowErrorMatchingInlineSnapshot(
+				`"--env.NODE_ENV must be one of development or production"`,
+			)
+		})
+
+		test('should handle multiple keys with object value schema choices', () => {
+			const program = cli().option(
+				'modes',
+				z.object(z.string().choices(['on', 'off', 'auto'])),
+			)
+			const result = program.parse([
+				'--modes.feature1',
+				'on',
+				'--modes.feature2',
+				'off',
+				'--modes.feature3',
+				'auto',
+			])
+			expect(result?.options.modes).toEqual({
+				feature1: 'on',
+				feature2: 'off',
+				feature3: 'auto',
+			})
+		})
+
+		test('should handle object with numeric choices', () => {
+			const program = cli().option('levels', z.object(z.number().min(1).max(5)))
+			const result = program.parse([
+				'--levels.warning',
+				'3',
+				'--levels.error',
+				'5',
+			])
+			expect(result?.options.levels).toEqual({
+				warning: 3,
+				error: 5,
+			})
+		})
+
+		test('should validate numeric constraints in object value schema', () => {
+			const program = cli().option('levels', z.object(z.number().min(1).max(5)))
+			expect(() =>
+				program.parse(['--levels.critical', '10']),
+			).toThrowErrorMatchingInlineSnapshot(
+				`"--levels.critical must be at most 5"`,
+			)
+		})
+	})
+
+	describe('Union with string choices', () => {
+		test('should parse union with string that has many choices', () => {
+			const program = cli().option(
+				'output',
+				z.union(
+					z.boolean(),
+					z
+						.string()
+						.choices(['none', 'minimal', 'normal', 'detailed', 'verbose']),
+				),
+			)
+			const result = program.parse(['--output', 'detailed'])
+			expect(result?.options.output).toBe('detailed')
+		})
+
+		test('should validate choices in union', () => {
+			const program = cli().option(
+				'output',
+				z.union(
+					z.boolean(),
+					z
+						.string()
+						.choices(['none', 'minimal', 'normal', 'detailed', 'verbose']),
+				),
+			)
+			expect(() =>
+				program.parse(['--output', 'invalid']),
+			).toThrowErrorMatchingInlineSnapshot(
+				`"--output must be one of none, minimal, normal, detailed, or verbose"`,
+			)
+		})
+
+		test('should handle boolean variant in union with string choices', () => {
+			const program = cli().option(
+				'output',
+				z.union(z.boolean(), z.string().choices(['none', 'minimal', 'normal'])),
+			)
+			const result = program.parse(['--output'])
+			expect(result?.options.output).toBe(true)
+		})
+
+		test('should handle union with multiple string schemas with different choices', () => {
+			const program = cli().option(
+				'mode',
+				z.union(
+					z.string().choices(['dev', 'prod']).describe('Environment mode'),
+					z.string().choices(['debug', 'release']).describe('Build mode'),
+				),
+			)
+			const result = program.parse(['--mode', 'debug'])
+			expect(result?.options.mode).toBe('debug')
+		})
+
+		test('should handle complex union with object containing string choices', () => {
+			const program = cli().option(
+				'config',
+				z.union(
+					z.string().choices(['preset1', 'preset2', 'preset3']),
+					z.object({
+						type: z.string().choices(['custom']),
+						level: z.string().choices(['low', 'medium', 'high']),
+					}),
+				),
+			)
+
+			let result = program.parse(['--config', 'preset1'])
+			expect(result?.options.config).toBe('preset1')
+
+			result = program.parse([
+				'--config.type',
+				'custom',
+				'--config.level',
+				'high',
+			])
+			expect(result?.options.config).toEqual({
+				type: 'custom',
+				level: 'high',
+			})
+		})
+	})
+
+	describe('Complex scenarios with new features', () => {
+		test('should handle nested object with union containing boolean default true', () => {
+			const program = cli().option(
+				'build',
+				z.object({
+					output: z.string(),
+					sourcemap: z.union(
+						z.boolean().default(true),
+						z.string().choices(['inline', 'external']),
+					),
+					minify: z.union(
+						z.boolean().default(true),
+						z.object({
+							js: z.boolean(),
+							css: z.boolean(),
+						}),
+					),
+				}),
+			)
+
+			const result = program.parse([
+				'--build.output',
+				'dist',
+				'--no-build.sourcemap',
+				'--build.minify.js',
+				'true',
+				'--build.minify.css',
+				'false',
+			])
+
+			expect(result?.options.build).toEqual({
+				output: 'dist',
+				sourcemap: false,
+				minify: {
+					js: true,
+					css: false,
+				},
+			})
+		})
+
+		test('should handle union with object having value schema with choices', () => {
+			const program = cli().option(
+				'transform',
+				z.union(
+					z.boolean().default(false),
+					z.object(z.string().choices(['babel', 'typescript', 'swc'])),
+				),
+			)
+
+			const result = program.parse([
+				'--transform.jsx',
+				'babel',
+				'--transform.decorators',
+				'typescript',
+			])
+
+			expect(result?.options.transform).toEqual({
+				jsx: 'babel',
+				decorators: 'typescript',
+			})
+		})
+
+		test('should handle command with union options having boolean defaults', () => {
+			let captured: any = null
+			const program = cli()
+
+			program
+				.command('build', {
+					watch: z.union(
+						z.boolean().default(false),
+						z.string().choices(['poll', 'native']),
+					),
+					cache: z.union(
+						z.boolean().default(true),
+						z.string().choices(['memory', 'filesystem']),
+					),
+				})
+				.action(({ options }) => {
+					captured = options
+				})
+
+			program.parse(['build', '--watch', 'poll', '--no-cache'])
+			expect(captured).toEqual({
+				watch: 'poll',
+				cache: false,
+			})
+		})
+
+		test('should handle array of unions with string choices', () => {
+			const program = cli().option(
+				'formats',
+				z.array(
+					z.union(
+						z.string().choices(['esm', 'cjs', 'umd']),
+						z.object({
+							type: z.string().choices(['custom']),
+							extension: z.string(),
+						}),
+					),
+				),
+			)
+
+			const result = program.parse(['--formats', 'esm,cjs'])
+			expect(result?.options.formats).toEqual(['esm', 'cjs'])
+		})
+
+		test('should handle all new features together', () => {
+			const program = cli()
+				.option(
+					'mode',
+					z.string().choices(['development', 'production', 'test']),
+				)
+				.option(
+					'features',
+					z.object(z.string().choices(['enabled', 'disabled', 'auto'])),
+				)
+				.option(
+					'sourcemap',
+					z.union(
+						z.boolean().default(true),
+						z.string().choices(['none', 'inline', 'external', 'both']),
+					),
+				)
+				.option(
+					'minify',
+					z.union(
+						z.boolean().default(true),
+						z.object({
+							js: z.boolean().default(true),
+							css: z.boolean().default(true),
+							html: z.boolean().default(false),
+						}),
+					),
+				)
+
+			const result = program.parse([
+				'--mode',
+				'production',
+				'--features.logging',
+				'enabled',
+				'--features.telemetry',
+				'disabled',
+				'--sourcemap',
+				'external',
+				'--no-minify.css',
+			])
+
+			// @ts-expect-error
+			expect(result?.options).toEqual({
+				mode: 'production',
+				features: {
+					logging: 'enabled',
+					telemetry: 'disabled',
+				},
+				sourcemap: 'external',
+				minify: {
+					js: true,
+					css: false,
+					html: false,
+				},
+			})
+		})
+
+		test('should validate all constraints in complex union scenarios', () => {
+			const program = cli().option(
+				'complex',
+				z.union(
+					z.boolean().default(true),
+					z.string().choices(['a', 'b', 'c']),
+					z.number().min(0).max(100),
+					z.object({
+						type: z.string().choices(['custom']),
+						value: z.string().min(3).max(10),
+					}),
+				),
+			)
+
+			let result = program.parse(['--no-complex'])
+			expect(result?.options.complex).toBe(false)
+
+			result = program.parse(['--complex', 'b'])
+			expect(result?.options.complex).toBe('b')
+
+			result = program.parse(['--complex', '50'])
+			expect(result?.options.complex).toBe(50)
+
+			result = program.parse([
+				'--complex.type',
+				'custom',
+				'--complex.value',
+				'test',
+			])
+			expect(result?.options.complex).toEqual({
+				type: 'custom',
+				value: 'test',
+			})
+
+			expect(() =>
+				program.parse(['--complex', 'd']),
+			).toThrowErrorMatchingInlineSnapshot(
+				`"--complex must be one of a, b, or c"`,
+			)
+
+			expect(() =>
+				program.parse(['--complex', '101']),
+			).toThrowErrorMatchingInlineSnapshot(
+				`"--complex must be one of a, b, or c"`,
+			)
+
+			expect(() =>
+				program.parse(['--complex.type', 'invalid']),
+			).toThrowErrorMatchingInlineSnapshot(
+				`"--complex.type must be one of custom"`,
+			)
+
+			expect(() =>
+				program.parse(['--complex.type', 'custom', '--complex.value', 'ab']),
+			).toThrowErrorMatchingInlineSnapshot(
+				`"--complex.value must be at least 3 characters"`,
+			)
+		})
+	})
 })
