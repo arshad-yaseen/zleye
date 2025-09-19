@@ -1041,24 +1041,13 @@ class HelpFormatter {
 				// @ts-expect-error
 				schema._shape
 			) {
-				if (prefix === '') {
-					rows.push({ flags: '', type: '', desc: '' })
-				}
 				// @ts-expect-error
 				const objectRows = this.buildOptionRows(schema._shape, fullKey)
 				rows.push(...objectRows)
-				if (prefix === '') {
-					rows.push({ flags: '', type: '', desc: '' })
-				}
 			} else {
 				// Check if it's a boolean with default true that needs grouping
 				const needsNoVersion =
 					schema._type === 'boolean' && schema._defaultValue === true
-
-				if (needsNoVersion) {
-					// Add spacing before the group
-					rows.push({ flags: '', type: '', desc: '' })
-				}
 
 				rows.push({
 					flags: this.getOptionFlags(fullKey, schema),
@@ -1074,9 +1063,6 @@ class HelpFormatter {
 						type: pc.dim(''),
 						desc: noDesc,
 					})
-
-					// Add spacing after the group
-					rows.push({ flags: '', type: '', desc: '' })
 				}
 			}
 		}
@@ -1127,22 +1113,6 @@ class HelpFormatter {
 				)
 				unionRows.push(...objRows)
 			}
-
-			if (i < objectSchemas.length - 1) {
-				unionRows.push({
-					flags: `    ${pc.dim('or')}`,
-					type: '',
-					desc: '',
-				})
-			}
-		}
-
-		if (objectSchemas.length > 0 && nonObjectGroups.length > 0) {
-			unionRows.push({
-				flags: `    ${pc.dim('or')}`,
-				type: '',
-				desc: '',
-			})
 		}
 
 		let isFirstNonObject = true
@@ -1154,13 +1124,6 @@ class HelpFormatter {
 					type: this.getOptionType(key, s),
 					desc: this.getOptionDescription(s),
 				}
-				if (!isFirstNonObject) {
-					unionRows.push({
-						flags: `    ${pc.dim('or')}`,
-						type: '',
-						desc: '',
-					})
-				}
 				unionRows.push(row)
 				isFirstNonObject = false
 			}
@@ -1171,9 +1134,7 @@ class HelpFormatter {
 		}
 
 		if (unionRows.length > 0) {
-			rows.push({ flags: '', type: '', desc: '' })
 			rows.push(...unionRows)
-			rows.push({ flags: '', type: '', desc: '' })
 		}
 
 		return rows
