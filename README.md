@@ -80,7 +80,8 @@ Arguments:
 Flags:
   -f, --file      <val>  Dockerfile path (default: "./Dockerfile")
   -t, --tag       <val>  Image tag
-      --no-cache         Do not use cache (default: false)
+  -c, --cache     <val>  Cache directory (default: "./cache")
+      --no-cache         Do not use cache
   -h, --help             Display this menu and exit
 
 Examples:
@@ -559,8 +560,8 @@ Arguments:
   <destination>  Destination file
 
 Flags:
-  -f, --force    Overwrite existing files (default: false)
-      --backup   Create backup of existing files (default: false)
+  -f, --force    Overwrite existing files
+      --backup   Create backup of existing files (default: true)
   -h, --help     Display this menu and exit
 
 Examples:
