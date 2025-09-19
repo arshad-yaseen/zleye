@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import { cli, z } from './src'
 
-const program = cli().option('offset', z.number().negative())
+const program = cli().option('offset', z.object(z.number()))
 
 console.time('time')
 const result = program.parse()

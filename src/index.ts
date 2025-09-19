@@ -1068,7 +1068,7 @@ class HelpFormatter {
 
 				// If it's a boolean with default true, add the --no- version
 				if (needsNoVersion) {
-					const noDesc = this.generateNoDescription(fullKey, schema)
+					const noDesc = this.generateNoDescription(fullKey)
 					rows.push({
 						flags: `    --no-${fullKey}`,
 						type: pc.dim(''),
@@ -1084,8 +1084,8 @@ class HelpFormatter {
 		return rows
 	}
 
-	private generateNoDescription(key: string, schema: Schema): string {
-		const words = key.split(/(?=[A-Z])|[-_]/).map((w) => w.toLowerCase())
+	private generateNoDescription(key: string): string {
+		const words = key.split(/(?=[A-Z])|[._-]/).map((w) => w.toLowerCase())
 		const readableKey = words.join(' ')
 		return `Disable ${readableKey}`
 	}
