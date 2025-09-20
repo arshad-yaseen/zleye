@@ -100,7 +100,7 @@ cli()
 cli()
   .option('verbose', z.boolean().alias('v'))
   .option('quiet', z.boolean().alias('q'))
-  .option('force', z.boolean().default(false).describe('Skip confirmations'))
+  .option('force', z.boolean().describe('Skip confirmations'))
 ```
 
 ### Arrays
@@ -148,7 +148,7 @@ cli()
     z.string(),
     z.object({
       file: z.string(),
-      encoding: z.string().default('utf8')
+      encoding: z.string().choices(['utf8', 'utf16', 'ascii']).default('utf8').describe('File encoding')
     })
   ))
 ```
