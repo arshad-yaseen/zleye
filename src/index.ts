@@ -202,6 +202,137 @@ class CLIError extends Error {
 	}
 }
 
+class ErrorFormatter {
+	static formatValue(value: unknown): string {
+		if (value === null) return pc.red('null')
+		if (value === undefined) return pc.red('undefined')
+		if (typeof value === 'string') return pc.red(`"${value}"`)
+		if (typeof value === 'number') return pc.yellow(String(value))
+		if (typeof value === 'boolean') return pc.cyan(String(value))
+		if (Array.isArray(value)) {
+			if (!value.length) return pc.red('[]')
+			if (value.length <= 3)
+				return (
+					pc.red('[') +
+					value.map((v) => this.formatValue(v)).join(', ') +
+					pc.red(']')
+				)
+			return pc.red(`[${value.length} items]`)
+		}
+		if (typeof value === 'object' && value !== null) {
+			const keys = Object.keys(value)
+			if (!keys.length) return pc.red('{}')
+			if (keys.length <= 3) return pc.red('{') + keys.join(', ') + pc.red('}')
+			return pc.red(`{${keys.length} keys}`)
+		}
+		return pc.red(String(value))
+	}
+
+	static formatCorrectUsage(
+		flagName: string,
+		value: unknown,
+		schema: Schema,
+		isNested = false,
+	): string {
+		const prefix = isNested ? '' : '--'
+		const type = schema._type
+
+		if (type === 'boolean')
+			return `${pc.green(`${prefix}${flagName}`)} ${pc.dim('or')} ${pc.green(`${prefix}${flagName} true`)}`
+
+		if (type === 'number') {
+			const num = schema as NumberSchema
+			let example = 42
+			if (num._min !== undefined) example = Math.max(example, num._min)
+			if (num._max !== undefined) example = Math.min(example, num._max)
+			if (num._isPositive && example <= 0) example = 1
+			if (num._isNegative && example >= 0) example = -1
+			if (num._isInt) example = Math.floor(example)
+			return pc.green(`${prefix}${flagName} ${example}`)
+		}
+
+		if (type === 'string') {
+			const str = schema as StringSchema
+			if (str._choices?.length)
+				return pc.green(`${prefix}${flagName} ${str._choices[0]}`)
+			const example = str._minLength ? 'x'.repeat(str._minLength) : 'value'
+			return pc.green(`${prefix}${flagName} "${example}"`)
+		}
+
+		if (type === 'array') {
+			const arr = schema as ArraySchema<any>
+			const item = this.getExampleValue(arr._itemSchema)
+			const examples = Array(arr._minLength || 1).fill(item)
+			return pc.green(`${prefix}${flagName} ${examples.join(',')}`)
+		}
+
+		if (type === 'object') {
+			const obj = schema as ObjectSchema
+			if (obj._isAnyKeys) {
+				const value = obj._valueSchema
+					? this.getExampleValue(obj._valueSchema)
+					: 'value'
+				return pc.green(`${prefix}${flagName}.key ${value}`)
+			}
+			if (obj._shape) {
+				const keys = Object.keys(obj._shape)
+				if (keys.length) {
+					const key = keys[0]
+					return pc.green(
+						`${prefix}${flagName}.${key} ${this.getExampleValue(obj._shape[key])}`,
+					)
+				}
+			}
+		}
+
+		if (type === 'union') {
+			const union = schema as UnionSchema<any>
+			const matchingSchema =
+				union._schemas.find(
+					(s: any) =>
+						s._type === typeof value ||
+						(s._type === 'array' && Array.isArray(value)),
+				) ||
+				union._schemas.find((s: any) => s._type !== 'object') ||
+				union._schemas[0]
+			return this.formatCorrectUsage(flagName, value, matchingSchema, isNested)
+		}
+
+		return pc.green(`${prefix}${flagName} <value>`)
+	}
+
+	static getExampleValue(schema: Schema): string {
+		if (schema._example) return schema._example
+		const type = schema._type
+
+		if (type === 'boolean') return 'true'
+		if (type === 'number') {
+			const num = schema as NumberSchema
+			let example = 42
+			if (num._min !== undefined) example = Math.max(example, num._min)
+			if (num._max !== undefined) example = Math.min(example, num._max)
+			if (num._isPositive && example <= 0) example = 1
+			if (num._isNegative && example >= 0) example = -1
+			if (num._isInt) example = Math.floor(example)
+			return String(example)
+		}
+		if (type === 'string') {
+			const str = schema as StringSchema
+			return str._choices?.length ? str._choices[0] : 'value'
+		}
+		if (type === 'array') {
+			const arr = schema as ArraySchema<any>
+			const item = this.getExampleValue(arr._itemSchema)
+			return `${item},${item}`
+		}
+		return 'value'
+	}
+
+	static showDiff(received: string, expected: string): string {
+		return `${pc.dim('  Received: ')}${pc.red(received)}\n${pc.dim('  Expected: ')}${pc.green(expected)}`
+	}
+}
+
 abstract class BaseSchemaImpl<T> implements BaseSchema<T> {
 	abstract _type: SchemaType
 	_output!: T
@@ -273,33 +404,73 @@ class StringSchemaImpl<T extends string = string>
 
 	protected validateValue(value: unknown, path: string): T {
 		if (typeof value !== 'string') {
-			throw new CLIError(`${path} must be a string, received ${typeof value}`)
-		}
-
-		if (this._choices && !this._choices.includes(value)) {
+			const flagName = path.replace('--', '')
+			const isArg = !path.startsWith('--')
 			throw new CLIError(
-				`${path} must be one of ${joinWithOr(Array.from(this._choices))}`,
+				`${path} expects a text value\n\n${ErrorFormatter.showDiff(
+					isArg
+						? `${flagName} ${ErrorFormatter.formatValue(value)}`
+						: `--${flagName} ${ErrorFormatter.formatValue(value)}`,
+					isArg
+						? `${flagName} "value"`
+						: ErrorFormatter.formatCorrectUsage(flagName, value, this),
+				)}`,
 			)
 		}
 
+		if (this._choices && !this._choices.includes(value)) {
+			const flagName = path.replace('--', '')
+			const isArg = !path.startsWith('--')
+			const similar = this._choices.find(
+				(c) =>
+					c.toLowerCase().includes(value.toLowerCase()) ||
+					value.toLowerCase().includes(c.toLowerCase()),
+			)
+			const choices = Array.from(this._choices)
+
+			let message = `${path} must be one of: ${choices.map((c) => pc.cyan(c)).join(', ')}\n\n`
+			message += similar
+				? `${ErrorFormatter.showDiff(
+						isArg ? `${flagName} ${value}` : `--${flagName} ${value}`,
+						isArg ? `${flagName} ${similar}` : `--${flagName} ${similar}`,
+					)}\n\n${pc.dim('Did you mean')} ${pc.green(similar)}${pc.dim('?')}`
+				: ErrorFormatter.showDiff(
+						isArg ? `${flagName} ${value}` : `--${flagName} ${value}`,
+						isArg ? `${flagName} ${choices[0]}` : `--${flagName} ${choices[0]}`,
+					)
+			throw new CLIError(message)
+		}
+
 		if (this._minLength !== undefined && value.length < this._minLength) {
+			const flagName = path.replace('--', '')
+			const isArg = !path.startsWith('--')
+			const padded = value + 'x'.repeat(this._minLength - value.length)
 			throw new CLIError(
 				this._minMessage ||
-					`${path} must be at least ${this._minLength} characters`,
+					`${path} must be at least ${this._minLength} characters\n\n${ErrorFormatter.showDiff(
+						`${isArg ? '' : '--'}${flagName} "${value}" ${pc.dim(`(${value.length} chars)`)}`,
+						`${isArg ? '' : '--'}${flagName} "${padded}" ${pc.dim(`(${padded.length} chars)`)}`,
+					)}`,
 			)
 		}
 
 		if (this._maxLength !== undefined && value.length > this._maxLength) {
+			const flagName = path.replace('--', '')
+			const isArg = !path.startsWith('--')
+			const truncated = value.slice(0, this._maxLength)
 			throw new CLIError(
 				this._maxMessage ||
-					`${path} must be at most ${this._maxLength} characters`,
+					`${path} must be at most ${this._maxLength} characters\n\n${ErrorFormatter.showDiff(
+						`${isArg ? '' : '--'}${flagName} "${value}" ${pc.dim(`(${value.length} chars)`)}`,
+						`${isArg ? '' : '--'}${flagName} "${truncated}" ${pc.dim(`(${truncated.length} chars)`)}`,
+					)}`,
 			)
 		}
 
 		if (this._regex && !this._regex.pattern.test(value)) {
 			throw new CLIError(
 				this._regex.message ||
-					`${path} must match pattern ${this._regex.pattern}`,
+					`${path} format is invalid\n\n  ${pc.dim('Received:')} ${pc.red(`"${value}"`)}\n  ${pc.dim('Pattern:')} ${pc.cyan(this._regex.pattern.toString())}`,
 			)
 		}
 
@@ -347,32 +518,67 @@ class NumberSchemaImpl extends BaseSchemaImpl<number> implements NumberSchema {
 
 	protected validateValue(value: unknown, path: string): number {
 		const num = Number(value)
+		const flagName = path.replace('--', '')
+		const isArg = !path.startsWith('--')
 
 		if (Number.isNaN(num)) {
-			throw new CLIError(`${path} must be a number, received ${typeof value}`)
+			throw new CLIError(
+				`${path} expects a numeric value\n\n${ErrorFormatter.showDiff(
+					`${isArg ? '' : '--'}${flagName} ${ErrorFormatter.formatValue(value)}`,
+					isArg
+						? `${flagName} 42`
+						: ErrorFormatter.formatCorrectUsage(flagName, value, this),
+				)}`,
+			)
 		}
 
 		if (this._isInt && !Number.isInteger(num)) {
-			throw new CLIError(this._intMessage || `${path} must be an integer`)
+			throw new CLIError(
+				this._intMessage ||
+					`${path} must be a whole number\n\n${ErrorFormatter.showDiff(
+						`${isArg ? '' : '--'}${flagName} ${num}`,
+						`${isArg ? '' : '--'}${flagName} ${Math.floor(num)}`,
+					)}`,
+			)
 		}
 
 		if (this._isPositive && num <= 0) {
-			throw new CLIError(this._positiveMessage || `${path} must be positive`)
+			throw new CLIError(
+				this._positiveMessage ||
+					`${path} must be positive\n\n${ErrorFormatter.showDiff(
+						`${isArg ? '' : '--'}${flagName} ${num}`,
+						`${isArg ? '' : '--'}${flagName} ${Math.abs(num) || 1}`,
+					)}`,
+			)
 		}
 
 		if (this._isNegative && num >= 0) {
-			throw new CLIError(this._negativeMessage || `${path} must be negative`)
+			throw new CLIError(
+				this._negativeMessage ||
+					`${path} must be negative\n\n${ErrorFormatter.showDiff(
+						`${isArg ? '' : '--'}${flagName} ${num}`,
+						`${isArg ? '' : '--'}${flagName} ${num === 0 ? -1 : -Math.abs(num)}`,
+					)}`,
+			)
 		}
 
 		if (this._min !== undefined && num < this._min) {
 			throw new CLIError(
-				this._minMessage || `${path} must be at least ${this._min}`,
+				this._minMessage ||
+					`${path} must be at least ${this._min}\n\n${ErrorFormatter.showDiff(
+						`${isArg ? '' : '--'}${flagName} ${num}`,
+						`${isArg ? '' : '--'}${flagName} ${this._min}`,
+					)}`,
 			)
 		}
 
 		if (this._max !== undefined && num > this._max) {
 			throw new CLIError(
-				this._maxMessage || `${path} must be at most ${this._max}`,
+				this._maxMessage ||
+					`${path} must be at most ${this._max}\n\n${ErrorFormatter.showDiff(
+						`${isArg ? '' : '--'}${flagName} ${num}`,
+						`${isArg ? '' : '--'}${flagName} ${this._max}`,
+					)}`,
 			)
 		}
 
@@ -423,7 +629,14 @@ class BooleanSchemaImpl
 		if (truthy.includes(value as any)) return true
 		if (falsy.includes(value as any)) return false
 
-		throw new CLIError(`${path} must be a boolean`)
+		const flagName = path.replace('--', '')
+		const isArg = !path.startsWith('--')
+		throw new CLIError(
+			`${path} expects a boolean value\n\n${ErrorFormatter.showDiff(
+				`${isArg ? '' : '--'}${flagName} ${ErrorFormatter.formatValue(value)}`,
+				`${isArg ? '' : '--'}${flagName} true`,
+			)}\n\n${pc.dim('Valid values: ')}${pc.cyan('true, false, 1, 0')}`,
+		)
 	}
 
 	parse(value: unknown, path = 'value'): boolean {
@@ -450,37 +663,73 @@ class ArraySchemaImpl<T> extends BaseSchemaImpl<T[]> implements ArraySchema<T> {
 	}
 
 	protected validateValue(value: unknown, path: string): T[] {
-		const arr = this.parseToArray(value)
+		const arr = Array.isArray(value)
+			? value
+			: typeof value === 'string' && value.includes(',')
+				? value
+						.split(',')
+						.map((item) => item.trim())
+						.filter(Boolean)
+				: [value]
+		const flagName = path.replace('--', '')
+		const isArg = !path.startsWith('--')
 
 		if (this._minLength !== undefined && arr.length < this._minLength) {
+			const item = ErrorFormatter.getExampleValue(this._itemSchema)
+			const examples = Array(this._minLength).fill(item)
 			throw new CLIError(
 				this._minMessage ||
-					`${path} must have at least ${this._minLength} items`,
+					`${path} needs at least ${this._minLength} items\n\n${ErrorFormatter.showDiff(
+						`${isArg ? '' : '--'}${flagName} ${arr.join(',')} ${pc.dim(`(${arr.length} items)`)}`,
+						`${isArg ? '' : '--'}${flagName} ${examples.join(',')} ${pc.dim(`(${examples.length} items)`)}`,
+					)}`,
 			)
 		}
 
 		if (this._maxLength !== undefined && arr.length > this._maxLength) {
+			const limited = arr.slice(0, this._maxLength)
 			throw new CLIError(
 				this._maxMessage ||
-					`${path} must have at most ${this._maxLength} items`,
+					`${path} allows at most ${this._maxLength} items\n\n${ErrorFormatter.showDiff(
+						`${isArg ? '' : '--'}${flagName} ${arr.join(',')} ${pc.dim(`(${arr.length} items)`)}`,
+						`${isArg ? '' : '--'}${flagName} ${limited.join(',')} ${pc.dim(`(${limited.length} items)`)}`,
+					)}`,
 			)
 		}
 
-		return arr.map((item, i) => {
-			const itemPath = `${path}[${i}]`
-			return this._itemSchema.parse(item, itemPath)
-		})
-	}
+		const results: T[] = []
+		const errors: Array<{ index: number; error: string }> = []
 
-	private parseToArray(value: unknown): unknown[] {
-		if (Array.isArray(value)) return value
-		if (typeof value === 'string' && value.includes(',')) {
-			return value
-				.split(',')
-				.map((item) => item.trim())
-				.filter(Boolean)
+		for (let i = 0; i < arr.length; i++) {
+			try {
+				results.push(this._itemSchema.parse(arr[i], `${path}[${i}]`))
+			} catch (error) {
+				if (error instanceof CLIError) {
+					errors.push({
+						index: i,
+						error: error.message
+							.split('\n')[0]
+							.replace(`${path}[${i}]`, `Item ${i + 1}`),
+					})
+				}
+			}
 		}
-		return [value]
+
+		if (errors.length) {
+			const item = ErrorFormatter.getExampleValue(this._itemSchema)
+			const valid = arr.map((v, i) =>
+				errors.find((e) => e.index === i) ? item : v,
+			)
+			let message = `${path} has invalid items\n\n`
+			for (const { error } of errors) message += `  ${pc.red('>')} ${error}\n`
+			message += `\n${ErrorFormatter.showDiff(
+				`${isArg ? '' : '--'}${flagName} ${arr.join(',')}`,
+				`${isArg ? '' : '--'}${flagName} ${valid.join(',')}`,
+			)}`
+			throw new CLIError(message)
+		}
+
+		return results
 	}
 
 	min(length: number, message?: string): this {
@@ -511,7 +760,7 @@ class ObjectSchemaImpl<T extends Record<string, any> = Record<string, any>>
 		super()
 		if (!shapeOrValueSchema) {
 			throw new CLIError(
-				'z.object() requires either a shape or value schema. Use z.object({...}) for explicit keys or z.object(z.string()) for any keys',
+				`Configuration expects either specific properties or a value schema\n\n${pc.dim('Examples:\n')}  ${pc.green('{ name: string(), age: number() }')}  ${pc.dim('for specific properties')}\n  ${pc.green('string()')}                           ${pc.dim('for any properties with string values')}`,
 			)
 		}
 
@@ -530,7 +779,26 @@ class ObjectSchemaImpl<T extends Record<string, any> = Record<string, any>>
 
 	protected validateValue(value: unknown, path: string): T {
 		if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-			throw new CLIError(`${path} must be an object`)
+			const flagName = path.replace('--', '')
+			let correctUsage = ''
+
+			if (this._shape) {
+				const keys = Object.keys(this._shape)
+				if (keys.length) {
+					const key = keys[0]
+					const example = ErrorFormatter.getExampleValue(this._shape[key])
+					correctUsage = `--${flagName}.${key} ${example}`
+				}
+			} else if (this._isAnyKeys) {
+				const example = this._valueSchema
+					? ErrorFormatter.getExampleValue(this._valueSchema)
+					: 'value'
+				correctUsage = `--${flagName}.property ${example}`
+			}
+
+			throw new CLIError(
+				`${path} expects property assignments\n\n  ${pc.dim('Received:')} ${ErrorFormatter.formatValue(value)}\n  ${pc.dim('Expected:')} ${pc.green(correctUsage)}\n\n${pc.dim('Use dot notation to set properties: ')}${pc.cyan(`--${flagName}.key value`)}`,
+			)
 		}
 
 		const objectValue = value as Record<string, any>
@@ -546,12 +814,25 @@ class ObjectSchemaImpl<T extends Record<string, any> = Record<string, any>>
 		if (this._shape) {
 			const result: any = {}
 			const shapeKeys = new Set(Object.keys(this._shape))
-			const valueKeys = Object.keys(objectValue)
-			const unknownKeys = valueKeys.filter((k) => !shapeKeys.has(k))
+			const unknownKeys = Object.keys(objectValue).filter(
+				(k) => !shapeKeys.has(k),
+			)
 
-			if (unknownKeys.length > 0) {
+			if (unknownKeys.length) {
+				const validKeys = Array.from(shapeKeys)
+				const suggestions = unknownKeys.map((uk) => {
+					const similar = validKeys.find(
+						(vk) =>
+							vk.toLowerCase() === uk.toLowerCase() ||
+							vk.toLowerCase().includes(uk.toLowerCase()) ||
+							uk.toLowerCase().includes(vk.toLowerCase()),
+					)
+					return similar ? `${pc.red(uk)} → ${pc.green(similar)}` : pc.red(uk)
+				})
+
+				const flagName = path.replace('--', '')
 				throw new CLIError(
-					`${path} has unknown keys: ${joinWithAnd(unknownKeys)}`,
+					`${path} received unexpected properties\n\n  ${pc.red('Invalid:')} ${suggestions.join(', ')}\n  ${pc.green('Valid:')} ${validKeys.map((k) => pc.cyan(k)).join(', ')}\n\n${pc.dim('Available properties:\n')}${validKeys.map((k) => `  ${pc.cyan(`--${flagName}.${k}`)}`).join('\n')}`,
 				)
 			}
 
@@ -561,12 +842,11 @@ class ObjectSchemaImpl<T extends Record<string, any> = Record<string, any>>
 			return result as T
 		}
 
-		throw new CLIError(`${path} schema configuration error`)
+		throw new CLIError(`${path} configuration error`)
 	}
 
 	getMissingRequiredFields(value: unknown): string[] {
 		if (!this._shape || typeof value !== 'object' || value === null) return []
-
 		const missing: string[] = []
 		const objectValue = value as Record<string, any>
 
@@ -579,7 +859,6 @@ class ObjectSchemaImpl<T extends Record<string, any> = Record<string, any>>
 				missing.push(key)
 			}
 		}
-
 		return missing
 	}
 }
@@ -598,13 +877,13 @@ class UnionSchemaImpl<T extends readonly Schema[]>
 
 	protected validateValue(value: unknown, path: string): UnionToTuple<T> {
 		const errors: { schema: Schema; error: string; specificity: number }[] = []
-
-		// Sort schemas to try number before string (for better type inference)
-		const sortedSchemas = [...this._schemas].sort((a, b) => {
-			if (a._type === 'number' && b._type === 'string') return -1
-			if (a._type === 'string' && b._type === 'number') return 1
-			return 0
-		})
+		const sortedSchemas = [...this._schemas].sort((a, b) =>
+			a._type === 'number' && b._type === 'string'
+				? -1
+				: a._type === 'string' && b._type === 'number'
+					? 1
+					: 0,
+		)
 
 		for (const schema of sortedSchemas) {
 			try {
@@ -622,61 +901,95 @@ class UnionSchemaImpl<T extends readonly Schema[]>
 						const providedKeys = Object.keys(value)
 						const missingFields = objSchema.getMissingRequiredFields(value)
 
-						if (providedKeys.length > 0 && objSchema._shape) {
+						if (providedKeys.length && objSchema._shape) {
 							const validKeys = providedKeys.filter(
 								(k) => k in objSchema._shape!,
 							)
 							specificity = validKeys.length * 10
+							if (missingFields.length) specificity += 5
 
-							if (missingFields.length > 0) {
-								specificity += 5
+							// Check for invalid properties to show better error
+							const invalidKeys = providedKeys.filter(
+								(k) => !(k in objSchema._shape!),
+							)
+							if (invalidKeys.length && validKeys.length === 0) {
+								const allValidKeys = Object.keys(objSchema._shape)
+								const flagName = path.replace('--', '')
+								throw new CLIError(
+									`${path} has invalid properties: ${pc.red('{' + invalidKeys.join(', ') + '}')}\n\n${pc.dim('Available properties for object format:')}\n${allValidKeys.map((k) => `  ${pc.green(`--${flagName}.${k}`)} <value>`).join('\n')}\n\n${pc.dim('Or use other formats:')}\n  ${pc.green(`--${flagName}`)} ${pc.dim('(boolean)')}\n  ${pc.green(`--${flagName} value`)} ${pc.dim('(simple value)')}`,
+								)
 							}
 						}
 					} else if (schema._type === typeof value) {
 						specificity = 1
 					}
 
-					errors.push({
-						schema,
-						error: error.message,
-						specificity,
-					})
+					errors.push({ schema, error: error.message, specificity })
 				}
 			}
 		}
 
 		errors.sort((a, b) => b.specificity - a.specificity)
 
-		const mostSpecificError = errors[0]
-		if (mostSpecificError && mostSpecificError.specificity > 0) {
-			throw new CLIError(mostSpecificError.error)
+		if (errors[0]?.specificity > 0) {
+			throw new CLIError(errors[0].error)
 		}
 
-		const typeDescriptions = this.getTypeDescriptions()
-		const uniqueTypes = [...new Set(typeDescriptions)]
+		const flagName = path.replace('--', '')
+		const examples = this.getExampleUsages(flagName, value)
 
-		throw new CLIError(`${path} must be one of: ${joinWithOr(uniqueTypes)}`)
+		throw new CLIError(
+			`${path} accepts multiple formats\n\n${pc.dim('Valid formats:')}\n${examples.map((ex) => `  ${ex}`).join('\n')}\n\n  ${pc.dim('You provided:')} ${ErrorFormatter.formatValue(value)}\n\n${pc.dim('Run with --help for usage information')}`,
+		)
 	}
 
-	private getTypeDescriptions(): string[] {
-		return this._schemas.map((s) => {
-			if (s._type === 'object') {
-				const objSchema = s as ObjectSchema
+	private getExampleUsages(flagName: string, providedValue: unknown): string[] {
+		const examples: string[] = []
+		const seenTypes = new Set<string>()
+
+		// Check what was provided to give better suggestions
+		const providedKeys =
+			typeof providedValue === 'object' &&
+			providedValue !== null &&
+			!Array.isArray(providedValue)
+				? Object.keys(providedValue)
+				: []
+
+		for (const schema of this._schemas) {
+			if (schema._type === 'object') {
+				const objSchema = schema as ObjectSchema
 				if (objSchema._isAnyKeys) {
-					return 'object with any keys'
-				}
-
-				if (objSchema._shape) {
+					examples.push(
+						`${pc.green(`--${flagName}.key value`)} ${pc.dim('(dynamic properties)')}`,
+					)
+				} else if (objSchema._shape) {
 					const keys = Object.keys(objSchema._shape)
-					if (keys.length <= 3) {
-						return `object {${keys.join(', ')}}`
+					if (keys.length) {
+						// Show all available properties if user provided invalid ones
+						if (providedKeys.length) {
+							examples.push(
+								`${pc.dim('Object properties:')}\n${keys.map((k) => `    ${pc.green(`--${flagName}.${k}`)} <value>`).join('\n')}`,
+							)
+						} else {
+							examples.push(
+								`${pc.green(`--${flagName}.property value`)} ${pc.dim(`(object properties: ${keys.slice(0, 3).join(', ')}${keys.length > 3 ? '...' : ''})`)}`,
+							)
+						}
 					}
-					return 'object'
 				}
+			} else if (!seenTypes.has(schema._type)) {
+				seenTypes.add(schema._type)
+				const example = ErrorFormatter.formatCorrectUsage(
+					flagName,
+					undefined,
+					schema,
+				)
+				const typeLabel = schema._type === 'boolean' ? 'flag' : schema._type
+				examples.push(`${example} ${pc.dim(`(${typeLabel})`)}`)
 			}
+		}
 
-			return s._type
-		})
+		return examples
 	}
 }
 
@@ -692,7 +1005,6 @@ class PositionalSchemaImpl<T = string>
 		super()
 		this._name = name
 		this._baseSchema = schema || (new StringSchemaImpl() as any)
-		// Copy over optional and default settings
 		this._isOptional = this._baseSchema._isOptional
 		this._defaultValue = this._baseSchema._defaultValue
 		this._description = this._baseSchema._description
@@ -703,7 +1015,6 @@ class PositionalSchemaImpl<T = string>
 	}
 
 	parse(value: unknown, path = 'value'): T {
-		// Use base schema's parsing directly to preserve optional/default behavior
 		return this._baseSchema.parse(value, path)
 	}
 }
@@ -726,20 +1037,19 @@ class VariadicPositionalSchemaImpl<T = string>
 
 	protected validateValue(values: unknown, path: string): T[] {
 		if (!Array.isArray(values)) {
-			throw new CLIError(`${path} must be an array`)
+			throw new CLIError(
+				`${path} expects multiple values\n\n  ${pc.dim('Received:')} ${ErrorFormatter.formatValue(values)}\n  ${pc.dim('Expected:')} ${pc.green('value1 value2 value3...')}`,
+			)
 		}
-
-		return values.map((value, i) => {
-			const itemPath = `${path}[${i}]`
-			return this._itemSchema.parse(value, itemPath)
-		})
+		return values.map((value, i) =>
+			this._itemSchema.parse(value, `${path}[${i}]`),
+		)
 	}
 
 	parse(value: unknown, path = 'value'): T[] {
-		if (value === undefined || (Array.isArray(value) && value.length === 0)) {
-			if (this._isOptional || this._defaultValue !== undefined) {
+		if (value === undefined || (Array.isArray(value) && !value.length)) {
+			if (this._isOptional || this._defaultValue !== undefined)
 				return this._defaultValue || []
-			}
 			return []
 		}
 		return this.validateValue(value, path)
@@ -845,12 +1155,11 @@ class HelpFormatter {
 
 	showError(error: unknown): void {
 		console.error()
+		const message = error instanceof Error ? error.message : String(error)
+		console.error(`${pc.red(pc.bold('Error:'))} ${message}`)
 		console.error(
-			pc.red(pc.bold('Error:')),
-			error instanceof Error ? error.message : String(error),
+			`\n${pc.dim(pc.white(`Run with ${pc.bold(pc.blue('--help'))} for usage information`))}`,
 		)
-		console.error()
-		console.error('Run with --help for usage information')
 	}
 
 	private printHeader(): void {
@@ -876,12 +1185,11 @@ class HelpFormatter {
 			console.log(`${pc.bold('Usage:')} ${this.cli._usage}`)
 		} else {
 			const parts = [this.cli._name || 'cli']
-			if (this.cli._commands.length > 0) parts.push(pc.blue('<command>'))
-			if (Object.keys(this.cli._options).length > 0)
+			if (this.cli._commands.length) parts.push(pc.blue('<command>'))
+			if (Object.keys(this.cli._options).length)
 				parts.push(pc.blue('[...flags]'))
 
-			const hasPositionals = this.cli._positionals.length > 0
-			if (hasPositionals) {
+			if (this.cli._positionals.length) {
 				parts.push(
 					...this.cli._positionals.map((p) =>
 						'_isVariadic' in p && p._isVariadic
@@ -897,7 +1205,7 @@ class HelpFormatter {
 	}
 
 	private printPositionals(): void {
-		if (this.cli._positionals.length === 0) return
+		if (!this.cli._positionals.length) return
 
 		console.log(pc.bold('Arguments:'))
 		for (const pos of this.cli._positionals) {
@@ -909,7 +1217,7 @@ class HelpFormatter {
 	}
 
 	private printCommands(): void {
-		if (this.cli._commands.length === 0) return
+		if (!this.cli._commands.length) return
 
 		console.log(pc.bold('Commands:'))
 		const rows = this.cli._commands.map((cmd) => ({
@@ -922,23 +1230,19 @@ class HelpFormatter {
 		const exampleWidth = Math.max(...rows.map((r) => r.example.length))
 
 		for (const { name, example, description } of rows) {
-			const namePart = `  ${pc.cyan(name.padEnd(nameWidth))}`
-			const examplePart = example
-				? `  ${pc.dim(example.padEnd(exampleWidth))}`
-				: `  ${' '.repeat(exampleWidth)}`
-			const descPart = description ? `  ${description}` : ''
-			console.log(`${namePart}${examplePart}${descPart}`)
+			console.log(
+				`  ${pc.cyan(name.padEnd(nameWidth))}  ${example ? pc.dim(example.padEnd(exampleWidth)) : ' '.repeat(exampleWidth)}  ${description}`,
+			)
 		}
 
-		console.log()
 		console.log(
-			`  ${pc.cyan('<command> --help'.padEnd(nameWidth))}${exampleWidth > 0 ? `  ${' '.repeat(exampleWidth)}` : ''}  ${pc.dim('Print help text for command.')}`,
+			`  ${pc.cyan('<command> --help'.padEnd(nameWidth))}${exampleWidth ? `  ${' '.repeat(exampleWidth)}` : ''}  ${pc.dim('Print help text for command.')}`,
 		)
 		console.log()
 	}
 
 	private printOptions(): void {
-		if (Object.keys(this.cli._options).length === 0) return
+		if (!Object.keys(this.cli._options).length) return
 
 		console.log(pc.bold('Flags:'))
 		this.printOptionsTable(this.cli._options)
@@ -946,7 +1250,7 @@ class HelpFormatter {
 	}
 
 	private printExamples(): void {
-		if (this.cli._examples.length === 0) return
+		if (!this.cli._examples.length) return
 
 		console.log(pc.bold('Examples:'))
 		for (const example of this.cli._examples) {
@@ -979,7 +1283,7 @@ class HelpFormatter {
 	}
 
 	private printCommandOptions(command: Command): void {
-		if (Object.keys(command.options).length === 0) return
+		if (!Object.keys(command.options).length) return
 
 		console.log(pc.bold('Flags:'))
 		this.printOptionsTable(command.options)
@@ -992,7 +1296,7 @@ class HelpFormatter {
 			: command.example
 				? [command.example]
 				: []
-		if (examples.length === 0) return
+		if (!examples.length) return
 
 		console.log(pc.bold('Examples:'))
 		for (const example of examples) {
@@ -1006,7 +1310,7 @@ class HelpFormatter {
 		const typeWidth = Math.max(...rows.map((r) => r.type.length))
 
 		for (const { flags, type, desc } of rows) {
-			if (flags === '' && type === '' && desc === '') {
+			if (!flags && !type && !desc) {
 				console.log()
 			} else {
 				console.log(
@@ -1023,6 +1327,7 @@ class HelpFormatter {
 	private buildOptionRows(
 		options: Record<string, Schema>,
 		prefix = '',
+		addedNoVersions = new Set<string>(),
 	): Array<{ flags: string; type: string; desc: string }> {
 		const rows: Array<{ flags: string; type: string; desc: string }> = []
 
@@ -1030,9 +1335,13 @@ class HelpFormatter {
 			const fullKey = prefix ? `${prefix}.${key}` : key
 
 			if (schema._type === 'union') {
-				const unionSchema = schema as UnionSchema<any>
-				const unionRows = this.buildUnionRows(fullKey, unionSchema)
-				rows.push(...unionRows)
+				rows.push(
+					...this.buildUnionRows(
+						fullKey,
+						schema as UnionSchema<any>,
+						addedNoVersions,
+					),
+				)
 			} else if (
 				schema._type === 'object' &&
 				// @ts-expect-error
@@ -1040,26 +1349,43 @@ class HelpFormatter {
 				// @ts-expect-error
 				schema._shape
 			) {
-				// @ts-expect-error
-				const objectRows = this.buildOptionRows(schema._shape, fullKey)
-				rows.push(...objectRows)
-			} else {
-				// Check if it's a boolean with default true that needs --no- version
-				const needsNoVersion = this.shouldAddNoVersion(schema)
+				rows.push(
+					// @ts-expect-error
+					...this.buildOptionRows(schema._shape, fullKey, addedNoVersions),
+				)
 
+				if (schema._defaultValue) {
+					// @ts-expect-error
+					for (const [propKey, propSchema] of Object.entries(schema._shape)) {
+						const nestedKey = `${fullKey}.${propKey}`
+						if (
+							// @ts-expect-error
+							propSchema._type === 'boolean' &&
+							schema._defaultValue[propKey] === true &&
+							!addedNoVersions.has(nestedKey)
+						) {
+							addedNoVersions.add(nestedKey)
+							rows.push({
+								flags: `    --no-${nestedKey}`,
+								type: pc.dim(''),
+								desc: this.generateNoDescription(nestedKey),
+							})
+						}
+					}
+				}
+			} else {
 				rows.push({
 					flags: this.getOptionFlags(fullKey, schema),
 					type: this.getOptionType(fullKey, schema),
 					desc: this.getOptionDescription(schema),
 				})
 
-				// If it needs --no- version, add it
-				if (needsNoVersion) {
-					const noDesc = this.generateNoDescription(fullKey)
+				if (!addedNoVersions.has(fullKey) && this.shouldAddNoVersion(schema)) {
+					addedNoVersions.add(fullKey)
 					rows.push({
 						flags: `    --no-${fullKey}`,
 						type: pc.dim(''),
-						desc: noDesc,
+						desc: this.generateNoDescription(fullKey),
 					})
 				}
 			}
@@ -1069,20 +1395,19 @@ class HelpFormatter {
 	}
 
 	private shouldAddNoVersion(schema: Schema): boolean {
-		// Check if it's a boolean with default true
-		if (schema._type === 'boolean' && schema._defaultValue === true) {
-			return true
-		}
+		if (schema._type === 'boolean' && schema._defaultValue === true) return true
 
-		// Check if it's a union containing a boolean with default true
 		if (schema._type === 'union') {
 			const unionSchema = schema as UnionSchema<any>
+			if (
+				schema._defaultValue === true &&
+				unionSchema._schemas.some((s: any) => s._type === 'boolean')
+			)
+				return true
 			const booleanSchema = unionSchema._schemas.find(
 				(s: any) => s._type === 'boolean',
 			)
-			if (booleanSchema && booleanSchema._defaultValue === true) {
-				return true
-			}
+			if (booleanSchema?._defaultValue === true) return true
 		}
 
 		return false
@@ -1090,103 +1415,86 @@ class HelpFormatter {
 
 	private generateNoDescription(key: string): string {
 		const words = key.split(/(?=[A-Z])|[._-]/).map((w) => w.toLowerCase())
-		const readableKey = words.join(' ')
-		return `Disable ${readableKey}`
+		return `Disable ${words.join(' ')}`
 	}
 
 	private buildUnionRows(
 		key: string,
 		schema: UnionSchema<any>,
+		addedNoVersions: Set<string>,
 	): Array<{ flags: string; type: string; desc: string }> {
 		const rows: Array<{ flags: string; type: string; desc: string }> = []
-		const schemas = schema._schemas
+		const groups = new Map<string, Schema[]>()
 
-		const groups: Map<string, Schema[]> = new Map()
-		for (const s of schemas) {
+		for (const s of schema._schemas) {
 			const type = s._type
 			if (!groups.has(type)) groups.set(type, [])
 			groups.get(type)!.push(s)
 		}
-
-		const unionRows: Array<{ flags: string; type: string; desc: string }> = []
 
 		const objectSchemas = groups.get('object') ?? []
 		const nonObjectGroups = Array.from(groups.entries()).filter(
 			([type]) => type !== 'object',
 		)
 
-		for (let i = 0; i < objectSchemas.length; ++i) {
-			const objSchema = objectSchemas[i]
+		for (const objSchema of objectSchemas) {
 			if ((objSchema as ObjectSchema)._isAnyKeys) {
-				const row = {
+				rows.push({
 					flags: `    --${key}.<key>`,
 					type: this.getOptionType(key, objSchema),
 					desc: this.getOptionDescription(objSchema),
-				}
-				unionRows.push(row)
+				})
 			} else {
-				const objRows = this.buildOptionRows(
-					(objSchema as ObjectSchema<any>)._shape!,
-					key,
-				)
-				unionRows.push(...objRows)
-
-				// Check if object properties need --no- versions
 				const objShape = (objSchema as ObjectSchema<any>)._shape!
+				rows.push(...this.buildOptionRows(objShape, key, addedNoVersions))
+
 				for (const [propKey, propSchema] of Object.entries(objShape)) {
-					if (this.shouldAddNoVersion(propSchema)) {
-						const fullKey = `${key}.${propKey}`
-						const noDesc = this.generateNoDescription(fullKey)
-						unionRows.push({
+					const fullKey = `${key}.${propKey}`
+					if (
+						propSchema._type === 'boolean' &&
+						propSchema._defaultValue === true &&
+						!addedNoVersions.has(fullKey)
+					) {
+						addedNoVersions.add(fullKey)
+						rows.push({
 							flags: `    --no-${fullKey}`,
 							type: pc.dim(''),
-							desc: noDesc,
+							desc: this.generateNoDescription(fullKey),
 						})
 					}
 				}
 			}
 		}
 
-		let isFirstNonObject = true
-		for (const [type, groupSchemas] of nonObjectGroups) {
-			for (let i = 0; i < groupSchemas.length; ++i) {
-				const s = groupSchemas[i]
-				const row = {
+		for (const [, groupSchemas] of nonObjectGroups) {
+			for (const s of groupSchemas) {
+				rows.push({
 					flags: this.getOptionFlags(key, s),
 					type: this.getOptionType(key, s),
 					desc: this.getOptionDescription(s),
-				}
-				unionRows.push(row)
-				isFirstNonObject = false
+				})
 			}
 		}
 
-		// Check if we need to add --no- version for boolean in union
-		const needsNoVersion = this.shouldAddNoVersion(schema)
-		if (needsNoVersion) {
-			const noDesc = this.generateNoDescription(key)
-			unionRows.push({
+		if (!addedNoVersions.has(key) && this.shouldAddNoVersion(schema)) {
+			addedNoVersions.add(key)
+			rows.push({
 				flags: `    --no-${key}`,
 				type: pc.dim(''),
-				desc: noDesc,
+				desc: this.generateNoDescription(key),
 			})
 		}
 
-		if (schema._description && unionRows.length > 0) {
-			unionRows[0].desc = `${schema._description} ${unionRows[0].desc ? `- ${unionRows[0].desc}` : ''}`
-		}
-
-		if (unionRows.length > 0) {
-			rows.push(...unionRows)
+		if (schema._description && rows.length) {
+			rows[0].desc = `${schema._description}${rows[0].desc ? ` - ${rows[0].desc}` : ''}`
 		}
 
 		return rows
 	}
 
 	private getOptionFlags(key: string, schema: Schema): string {
-		if (schema._type === 'object' && (schema as ObjectSchema)._isAnyKeys) {
+		if (schema._type === 'object' && (schema as ObjectSchema)._isAnyKeys)
 			return `    --${key}.<key>`
-		}
 		return schema._alias ? `-${schema._alias}, --${key}` : `    --${key}`
 	}
 
@@ -1199,13 +1507,10 @@ class HelpFormatter {
 			(schema as StringSchema)._choices?.length
 		) {
 			const choices = (schema as StringSchema)._choices!
-			// Show all choices, or up to a reasonable limit (e.g., 5)
-			if (choices.length <= 5) {
-				valueType = choices.join('|')
-			} else {
-				// For many choices, show first few with ellipsis
-				valueType = `${choices.slice(0, 4).join('|')}|...`
-			}
+			valueType =
+				choices.length <= 5
+					? choices.join('|')
+					: `${choices.slice(0, 4).join('|')}|...`
 		} else if (schema._type === 'number') {
 			valueType = 'n'
 		} else if (schema._type === 'array') {
@@ -1214,9 +1519,7 @@ class HelpFormatter {
 			schema._type === 'object' &&
 			(schema as ObjectSchema)._valueSchema
 		) {
-			const valueSchema = (schema as ObjectSchema)._valueSchema!
-			// Recursively get the type for the value schema
-			return this.getOptionType(_key, valueSchema)
+			return this.getOptionType(_key, (schema as ObjectSchema)._valueSchema!)
 		}
 
 		return ` ${pc.dim(`<${valueType}>`)}  `
@@ -1225,11 +1528,7 @@ class HelpFormatter {
 	private getOptionDescription(schema: Schema): string {
 		const parts: string[] = []
 		if (schema._description) parts.push(schema._description)
-
-		// Add example to description
-		if (schema._example) {
-			parts.push(pc.dim(`Example: ${schema._example}`))
-		}
+		if (schema._example) parts.push(pc.dim(`Example: ${schema._example}`))
 
 		const constraints = this.getConstraints(schema)
 		if (constraints) parts.push(pc.dim(`(${constraints})`))
@@ -1272,8 +1571,7 @@ class HelpFormatter {
 
 	private buildCommandUsage(command: Command): string {
 		const parts = [this.cli._name || 'cli', command.name]
-		if (Object.keys(command.options).length > 0)
-			parts.push(pc.cyan('[...flags]'))
+		if (Object.keys(command.options).length) parts.push(pc.cyan('[...flags]'))
 		if (command.positionals) {
 			parts.push(
 				...command.positionals.map((p) =>
@@ -1299,30 +1597,41 @@ class HelpFormatter {
 }
 
 class ArgumentParser {
+	private flagUsage = new Map<string, 'simple' | 'object' | 'both'>()
+	private flagValues = new Map<string, any>()
+
 	parse(
 		args: string[],
 		options: Record<string, Schema>,
-	): { parsed: Record<string, any>; positionalArgs: any[]; rawArgs: string[] } {
+	): {
+		parsed: Record<string, any>
+		positionalArgs: any[]
+		rawArgs: string[]
+	} {
 		const parsed: Record<string, any> = {}
 		const rawOptions: Record<string, any> = {}
 		const positionalArgs: any[] = []
 		const doubleDashIndex = args.indexOf('--')
 		let rawArgs: string[] = []
 
+		this.flagUsage.clear()
+		this.flagValues.clear()
+
 		if (doubleDashIndex !== -1) {
 			rawArgs = args.slice(doubleDashIndex + 1)
 			args = args.slice(0, doubleDashIndex)
 		}
 
+		const flagOccurrences = this.collectFlagOccurrences(args, options)
+		this.detectAndReportConflicts(flagOccurrences, options)
+
 		for (let i = 0; i < args.length; i++) {
 			const arg = args[i]
 
 			if (arg.startsWith('--')) {
-				const consumed = this.parseFlag(arg, args, i, options, rawOptions)
-				i += consumed
+				i += this.parseFlag(arg, args, i, options, rawOptions)
 			} else if (arg.startsWith('-') && !this.looksLikeNegativeNumber(arg)) {
-				const consumed = this.parseAlias(arg, args, i, options, rawOptions)
-				i += consumed
+				i += this.parseAlias(arg, args, i, options, rawOptions)
 			} else {
 				positionalArgs.push(arg)
 			}
@@ -1331,25 +1640,71 @@ class ArgumentParser {
 		positionalArgs.push(...rawArgs)
 
 		for (const [key, schema] of Object.entries(options)) {
-			if (rawOptions[key] !== undefined) {
-				parsed[key] = this.parseOptionWithSchema(
-					key,
-					schema,
-					rawOptions[key],
-					options,
-				)
-			} else {
-				parsed[key] = schema.parse(undefined, `--${key}`)
-			}
+			parsed[key] =
+				rawOptions[key] !== undefined
+					? this.parseOptionWithSchema(key, schema, rawOptions[key], options)
+					: schema.parse(undefined, `--${key}`)
 		}
 
 		return { parsed, positionalArgs, rawArgs }
 	}
 
+	private collectFlagOccurrences(
+		args: string[],
+		options: Record<string, Schema>,
+	): Map<string, string[]> {
+		const occurrences = new Map<string, string[]>()
+
+		for (const arg of args) {
+			if (arg.startsWith('--') && !arg.startsWith('--no-')) {
+				const [keyPath] = arg.slice(2).split('=')
+				const mainKey = keyPath.split('.')[0]
+
+				if (options[mainKey]) {
+					if (!occurrences.has(mainKey)) occurrences.set(mainKey, [])
+					occurrences.get(mainKey)!.push(arg)
+				}
+			}
+		}
+
+		return occurrences
+	}
+
+	private detectAndReportConflicts(
+		occurrences: Map<string, string[]>,
+		options: Record<string, Schema>,
+	): void {
+		for (const [key, flags] of occurrences.entries()) {
+			if (flags.length > 1) {
+				const schema = options[key]
+
+				if (schema._type === 'union') {
+					const hasSimple = flags.some(
+						(f) => !f.includes('.') || f.split('=')[0] === `--${key}`,
+					)
+					const hasObject = flags.some(
+						(f) => f.includes('.') && !f.split('=')[0].endsWith(key),
+					)
+
+					if (hasSimple && hasObject) {
+						const simpleFlags = flags.filter(
+							(f) => !f.includes('.') || f.split('=')[0] === `--${key}`,
+						)
+						const objectFlags = flags.filter(
+							(f) => f.includes('.') && !f.split('=')[0].endsWith(key),
+						)
+
+						throw new CLIError(
+							`Cannot mix different forms of --${key}\n\n  ${pc.dim('You used both:')}\n    ${pc.red('Simple:')} ${simpleFlags.join(', ')}\n    ${pc.red('Object:')} ${objectFlags.join(', ')}\n\n  ${pc.dim('Choose one approach:')}\n    ${pc.green(`--${key}`)} ${pc.dim('for simple values')}\n    ${pc.green(`--${key}.property`)} ${pc.dim('for object properties')}`,
+						)
+					}
+				}
+			}
+		}
+	}
+
 	private looksLikeNegativeNumber(arg: string): boolean {
-		if (!arg.startsWith('-')) return false
-		const rest = arg.slice(1)
-		return /^\d/.test(rest) // Starts with digit after '-'
+		return arg.startsWith('-') && /^\d/.test(arg.slice(1))
 	}
 
 	private parseOptionWithSchema(
@@ -1362,6 +1717,15 @@ class ArgumentParser {
 			const unionSchema = schema as UnionSchema<any>
 
 			if (typeof rawValue === 'object' && !Array.isArray(rawValue)) {
+				if ('_unionValue' in rawValue) {
+					throw new CLIError(
+						`Cannot mix different value types for --${key}\n\n${ErrorFormatter.showDiff(
+							`--${key} ${ErrorFormatter.formatValue(rawValue._unionValue)} and --${key}.property`,
+							`--${key} value ${pc.dim('or')} --${key}.property value`,
+						)}`,
+					)
+				}
+
 				const objectSchemas = unionSchema._schemas.filter(
 					// @ts-expect-error
 					(s) => s._type === 'object',
@@ -1406,8 +1770,10 @@ class ArgumentParser {
 		}
 
 		if (schema._type === 'boolean') {
-			const booleanValue = this.parseBooleanValue(rawValue)
-			return schema.parse(booleanValue ?? rawValue, `--${key}`)
+			return schema.parse(
+				this.parseBooleanValue(rawValue) ?? rawValue,
+				`--${key}`,
+			)
 		}
 
 		return schema.parse(rawValue, `--${key}`)
@@ -1434,9 +1800,19 @@ class ArgumentParser {
 
 		if (schema._shape) {
 			const result: any = {}
+			const allOptions: string[] = []
 			for (const [k, v] of Object.entries(rawValue)) {
 				if (!schema._shape[k]) {
-					throw new CLIError(`${path}.${k} is not a valid option`)
+					const validKeys = Object.keys(schema._shape)
+					for (let i = 0; i < validKeys.length; i++) {
+						const vk = validKeys[i]
+						allOptions.push(`--${path.slice(2)}.${vk}`)
+					}
+					const suggestion = this.findSimilarKey(k, validKeys)
+
+					throw new CLIError(
+						`${path}.${k} is not recognized\n\n  ${pc.dim('Available properties:')}\n${validKeys.map((vk) => `    ${pc.green(`--${path.slice(2)}.${vk}`)}`).join('\n')}${suggestion ? `\n\n  ${pc.dim('Did you mean')} ${pc.green(`--${path.slice(2)}.${suggestion}`)}${pc.dim('?')}` : ''}`,
+					)
 				}
 				result[k] = schema._shape[k].parse(v, `${path}.${k}`)
 			}
@@ -1449,6 +1825,16 @@ class ArgumentParser {
 		}
 
 		return rawValue
+	}
+
+	private findSimilarKey(key: string, validKeys: string[]): string | undefined {
+		const lowered = key.toLowerCase()
+		return validKeys.find(
+			(vk) =>
+				vk.toLowerCase() === lowered ||
+				vk.toLowerCase().includes(lowered) ||
+				lowered.includes(vk.toLowerCase()),
+		)
 	}
 
 	private parseFlag(
@@ -1465,54 +1851,90 @@ class ArgumentParser {
 			const mainSchema = options[mainKey]
 
 			if (!mainSchema) {
-				throw new CLIError(`Unknown option: ${arg}`)
+				const suggestion = this.findSimilarKey(mainKey, Object.keys(options))
+				const availableOptions: string[] = []
+				for (const [k, s] of Object.entries(options)) {
+					availableOptions.push(`--${k}`)
+					if (this.shouldHandleNoVersion(s)) availableOptions.push(`--no-${k}`)
+				}
+
+				throw new CLIError(
+					`${arg} is not recognized\n\n  ${pc.dim('Available options:')}\n${availableOptions.map((o) => `    ${pc.green(o)}`).join('\n')}${suggestion ? `\n\n  ${pc.dim('Did you mean')} ${pc.green(`--no-${suggestion}`)}${pc.dim('?')}` : ''}`,
+				)
 			}
 
-			// Handle nested paths like --no-minify.css
 			if (keys.length > 1) {
-				// Check if the main schema is a union containing an object with this nested property
 				if (mainSchema._type === 'union') {
 					const unionSchema = mainSchema as UnionSchema<any>
 
-					// Find an object schema in the union that has this nested path with boolean default true
 					for (const s of unionSchema._schemas) {
 						if (s._type === 'object') {
 							const nestedSchema = this.getNestedSchema(s, keys.slice(1))
-							if (nestedSchema && this.shouldHandleNoVersion(nestedSchema)) {
+							if (
+								nestedSchema &&
+								this.shouldHandleNoVersion(nestedSchema, s, keys.slice(1))
+							) {
 								this.setNestedValue(rawOptions, keyPath, false, options)
 								return 0
 							}
 						}
 					}
-				} else {
-					// Regular nested schema (not in union)
+				} else if (mainSchema._type === 'object') {
 					const nestedSchema = this.getNestedSchema(mainSchema, keys.slice(1))
-					if (nestedSchema && this.shouldHandleNoVersion(nestedSchema)) {
+					if (
+						nestedSchema &&
+						this.shouldHandleNoVersion(nestedSchema, mainSchema, keys.slice(1))
+					) {
 						this.setNestedValue(rawOptions, keyPath, false, options)
 						return 0
 					}
 				}
 			} else {
-				// Simple case: --no-cache
 				if (this.shouldHandleNoVersion(mainSchema)) {
 					this.setNestedValue(rawOptions, keyPath, false, options)
 					return 0
 				}
 			}
 
-			throw new CLIError(`Unknown option: ${arg}`)
+			throw new CLIError(
+				`${arg} cannot be negated\n\n  ${pc.dim('The --no- prefix only works with boolean flags that default to true')}`,
+			)
 		}
 
 		const [keyPath, ...valueParts] = arg.slice(2).split('=')
 		const hasExplicitValue = valueParts.length > 0
 		const explicitValue = hasExplicitValue ? valueParts.join('=') : undefined
-
 		const keys = keyPath.split('.')
 		const mainKey = keys[0]
 		const schema = options[mainKey]
 
 		if (!schema) {
-			throw new CLIError(`Unknown option: --${mainKey}`)
+			const suggestion = this.findSimilarKey(mainKey, Object.keys(options))
+			const availableOptions: string[] = []
+			for (const [k, s] of Object.entries(options)) {
+				availableOptions.push(`--${k}`)
+				if (this.shouldHandleNoVersion(s)) availableOptions.push(`--no-${k}`)
+			}
+
+			throw new CLIError(
+				`--${mainKey} is not recognized\n\n  ${pc.dim('Available options:')}\n${availableOptions.map((o) => `    ${pc.green(o)}`).join('\n')}${suggestion ? `\n\n  ${pc.dim('Did you mean')} ${pc.green(`--${suggestion}`)}${pc.dim('?')}` : ''}`,
+			)
+		}
+
+		const isSimple = keys.length === 1
+		const currentUsage = this.flagUsage.get(mainKey)
+		const newUsage = isSimple ? 'simple' : 'object'
+
+		if (currentUsage && currentUsage !== newUsage) {
+			this.flagUsage.set(mainKey, 'both')
+
+			if (schema._type === 'union') {
+				throw new CLIError(
+					`Cannot mix forms for --${mainKey}\n\n  ${pc.dim('Previously used:')} ${currentUsage === 'simple' ? pc.yellow(`--${mainKey}`) : pc.yellow(`--${mainKey}.property`)}\n  ${pc.dim('Now trying:')} ${isSimple ? pc.red(`--${mainKey}`) : pc.red(`--${keyPath}`)}\n\n  ${pc.dim('Choose one approach consistently:')}\n    ${pc.green(`--${mainKey} value`)} ${pc.dim('for simple form')}\n    ${pc.green(`--${mainKey}.property value`)} ${pc.dim('for object form')}`,
+				)
+			}
+		} else {
+			this.flagUsage.set(mainKey, newUsage)
 		}
 
 		const expectsValue = this.schemaExpectsValue(schema, keys.slice(1))
@@ -1532,10 +1954,18 @@ class ArgumentParser {
 			} else if (expectsValue === 'union') {
 				value = true
 			} else {
-				throw new CLIError(`--${keyPath} requires a value`)
+				const example = ErrorFormatter.formatCorrectUsage(
+					keyPath,
+					undefined,
+					this.getSchemaAtPath(schema, keys.slice(1)),
+				)
+				throw new CLIError(
+					`--${keyPath} needs a value\n\n  ${pc.dim('Usage:')} ${example}`,
+				)
 			}
 
 			this.setNestedValue(rawOptions, keyPath, value, options)
+			this.flagValues.set(mainKey, value)
 		} else if (expectsValue === 'boolean') {
 			let value: any
 			if (hasExplicitValue) {
@@ -1551,26 +1981,70 @@ class ArgumentParser {
 				value = true
 			}
 			this.setNestedValue(rawOptions, keyPath, value, options)
+			this.flagValues.set(mainKey, value)
 		}
 
 		return consumed
 	}
 
-	private shouldHandleNoVersion(schema: Schema | undefined): boolean {
+	private getSchemaAtPath(schema: Schema, nestedKeys: string[]): Schema {
+		let current = schema
+
+		for (const key of nestedKeys) {
+			if (current._type === 'object') {
+				const objSchema = current as ObjectSchema
+				if (objSchema._isAnyKeys) return objSchema._valueSchema!
+				if (objSchema._shape?.[key]) current = objSchema._shape[key]
+			} else if (current._type === 'union') {
+				const unionSchema = current as UnionSchema<any>
+				const objSchema = unionSchema._schemas.find(
+					(s: any) => s._type === 'object',
+				)
+				if (objSchema) {
+					const obj = objSchema as ObjectSchema
+					if (obj._isAnyKeys) return obj._valueSchema!
+					if (obj._shape?.[key]) current = obj._shape[key]
+				}
+			}
+		}
+
+		return current
+	}
+
+	private shouldHandleNoVersion(
+		schema: Schema | undefined,
+		parentSchema?: Schema,
+		nestedKeys?: string[],
+	): boolean {
 		if (!schema) return false
 
-		if (schema._type === 'boolean' && schema._defaultValue === true) {
-			return true
+		if (schema._type === 'boolean' && schema._defaultValue === true) return true
+
+		if (
+			parentSchema &&
+			parentSchema._type === 'object' &&
+			parentSchema._defaultValue &&
+			nestedKeys?.length === 1
+		) {
+			const key = nestedKeys[0]
+			if (
+				schema._type === 'boolean' &&
+				parentSchema._defaultValue[key] === true
+			)
+				return true
 		}
 
 		if (schema._type === 'union') {
 			const unionSchema = schema as UnionSchema<any>
+			if (
+				schema._defaultValue === true &&
+				unionSchema._schemas.some((s: any) => s._type === 'boolean')
+			)
+				return true
 			const booleanSchema = unionSchema._schemas.find(
 				(s: any) => s._type === 'boolean',
 			)
-			if (booleanSchema && booleanSchema._defaultValue === true) {
-				return true
-			}
+			if (booleanSchema?._defaultValue === true) return true
 		}
 
 		return false
@@ -1580,7 +2054,7 @@ class ArgumentParser {
 		schema: Schema | undefined,
 		nestedKeys: string[],
 	): Schema | undefined {
-		if (!schema || nestedKeys.length === 0) return schema
+		if (!schema || !nestedKeys.length) return schema
 
 		let current = schema
 
@@ -1593,7 +2067,6 @@ class ArgumentParser {
 					return undefined
 				}
 			} else if (current._type === 'union') {
-				// For unions, try to find an object schema that has this key
 				const unionSchema = current as UnionSchema<any>
 				const objSchema = unionSchema._schemas.find((s: any) => {
 					if (s._type === 'object') {
@@ -1637,7 +2110,11 @@ class ArgumentParser {
 				if (objSchema._shape?.[key]) {
 					current = objSchema._shape[key]
 				} else {
-					throw new CLIError(`Unknown option key: ${key}`)
+					const validKeys = Object.keys(objSchema._shape || {})
+					const suggestion = this.findSimilarKey(key, validKeys)
+					throw new CLIError(
+						`Property '${key}' is not recognized\n\n  ${pc.dim('Available properties:')}\n${validKeys.map((k) => `    ${pc.cyan(k)}`).join('\n')}${suggestion ? `\n\n  ${pc.dim('Did you mean')} ${pc.green(suggestion)}${pc.dim('?')}` : ''}`,
+					)
 				}
 			} else if (current._type === 'union') {
 				const unionSchema = current as UnionSchema<any>
@@ -1650,17 +2127,12 @@ class ArgumentParser {
 						current = obj._valueSchema!
 						break
 					}
-
-					if (obj._shape?.[key]) {
-						current = obj._shape[key]
-					}
+					if (obj._shape?.[key]) current = obj._shape[key]
 				}
 			}
 		}
 
-		if (current._type === 'boolean') {
-			return 'boolean'
-		}
+		if (current._type === 'boolean') return 'boolean'
 
 		if (current._type === 'union') {
 			const unionSchema = current as UnionSchema<any>
@@ -1691,7 +2163,13 @@ class ArgumentParser {
 			Object.entries(options).find(([_, s]) => s._alias === alias) || []
 
 		if (!optionName) {
-			throw new CLIError(`Unknown option: -${alias}`)
+			const allAliases = Object.entries(options)
+				.filter(([_, s]) => s._alias)
+				.map(([k, s]) => ({ alias: s._alias, flag: k }))
+
+			throw new CLIError(
+				`-${alias} is not recognized\n\n${allAliases.length ? `  ${pc.dim('Available aliases:')}\n${allAliases.map(({ alias: a, flag }) => `    ${pc.green(`-${a}`)} ${pc.dim('for')} ${pc.cyan(`--${flag}`)}`).join('\n')}` : `  ${pc.dim('No aliases are defined for this command')}`}`,
+			)
 		}
 
 		// @ts-expect-error
@@ -1715,8 +2193,16 @@ class ArgumentParser {
 				rawOptions[optionName] = args[index + 1]
 				return 1
 			}
-			throw new CLIError(`-${alias} requires a value`)
+			const example = ErrorFormatter.formatCorrectUsage(
+				optionName,
+				undefined,
+				schema!,
+			)
+			throw new CLIError(
+				`-${alias} needs a value\n\n  ${pc.dim('Usage:')} ${example.replace(`--${optionName}`, `-${alias}`)}`,
+			)
 		}
+
 		if (index + 1 < args.length && !args[index + 1].startsWith('-')) {
 			rawOptions[optionName] = args[index + 1]
 			return 1
@@ -1735,12 +2221,41 @@ class ArgumentParser {
 		let current = obj
 		let schemaPath: any = options
 
+		if (keys.length > 1) {
+			const mainKey = keys[0]
+			const existingValue = obj[mainKey]
+
+			if (existingValue !== undefined && typeof existingValue !== 'object') {
+				const schema = options[mainKey]
+				if (schema._type === 'union') {
+					throw new CLIError(
+						`Cannot mix value types for --${mainKey}\n\n  ${pc.dim('Previously set:')} --${mainKey} ${ErrorFormatter.formatValue(existingValue)}\n  ${pc.dim('Now trying:')} --${key} ${ErrorFormatter.formatValue(value)}\n\n  ${pc.dim('Use one approach consistently:')}\n    ${pc.green(`--${mainKey} value`)} ${pc.dim('for simple values')}\n    ${pc.green(`--${mainKey}.property value`)} ${pc.dim('for object properties')}`,
+					)
+				}
+				throw new CLIError(
+					`Cannot set property on non-object value\n\n  ${pc.dim('Flag:')} --${mainKey}\n  ${pc.dim('Current value:')} ${ErrorFormatter.formatValue(existingValue)}\n  ${pc.dim('Attempted:')} --${key} ${ErrorFormatter.formatValue(value)}`,
+				)
+			}
+		}
+
 		for (let i = 0; i < keys.length - 1; i++) {
 			const k = keys[i]
 
 			if (!current[k]) {
 				current[k] = {}
+			} else if (typeof current[k] !== 'object' || Array.isArray(current[k])) {
+				const partialKey = keys.slice(0, i + 1).join('.')
+				throw new CLIError(
+					`Cannot set nested property\n\n  ${pc.dim('Path:')} --${key}\n  ${pc.dim('Conflict at:')} --${partialKey}\n  ${pc.dim('Current type:')} ${Array.isArray(current[k]) ? 'array' : typeof current[k]}`,
+				)
 			}
+
+			if (i === 0 && current[k]._unionValue !== undefined) {
+				throw new CLIError(
+					`Cannot switch to object form\n\n  ${pc.dim('Previously:')} --${k} ${ErrorFormatter.formatValue(current[k]._unionValue)}\n  ${pc.dim('Now trying:')} --${key} ${ErrorFormatter.formatValue(value)}\n\n  ${pc.dim('Use consistent form throughout')}`,
+				)
+			}
+
 			current = current[k]
 
 			if (schemaPath[k]) {
@@ -1924,7 +2439,6 @@ class CLIImpl<
 		}
 
 		processExit(0)
-
 		return true
 	}
 
@@ -1932,9 +2446,7 @@ class CLIImpl<
 		command?: Command
 		remainingArgs: string[]
 	} {
-		if (args.length === 0 || args[0].startsWith('-')) {
-			return { remainingArgs: args }
-		}
+		if (!args.length || args[0].startsWith('-')) return { remainingArgs: args }
 
 		const commandName = args[0]
 		const command = this._commands.find((c) => c.name === commandName)
@@ -1943,8 +2455,17 @@ class CLIImpl<
 			return { command, remainingArgs: args.slice(1) }
 		}
 
-		if (this._commands.length > 0) {
-			throw new CLIError(`Unknown command: ${commandName}`)
+		if (this._commands.length) {
+			const similar = this._commands.find(
+				(c) =>
+					c.name.toLowerCase() === commandName.toLowerCase() ||
+					c.name.toLowerCase().includes(commandName.toLowerCase()) ||
+					commandName.toLowerCase().includes(c.name.toLowerCase()),
+			)?.name
+
+			throw new CLIError(
+				`Command '${commandName}' not found\n\n  ${pc.dim('Available commands:')}\n${this._commands.map((c) => `    ${pc.green(c.name)}`).join('\n')}${similar ? `\n\n  ${pc.dim('Did you mean')} ${pc.green(similar)}${pc.dim('?')}` : ''}`,
+			)
 		}
 
 		return { remainingArgs: args }
@@ -1952,7 +2473,6 @@ class CLIImpl<
 
 	private executeCommand(command: Command, args: string[]): 'handled' {
 		const { parsed, positionalArgs } = this.parser.parse(args, command.options)
-
 		const { positionals, rest } = this.parsePositionals(
 			positionalArgs,
 			command.positionals || [],
@@ -1978,7 +2498,6 @@ class CLIImpl<
 
 	private parseMainCommand(args: string[]) {
 		const { parsed, positionalArgs } = this.parser.parse(args, this._options)
-
 		const { positionals, rest } = this.parsePositionals(
 			positionalArgs,
 			this._positionals,
@@ -1997,7 +2516,10 @@ class CLIImpl<
 	private parsePositionals(
 		args: any[],
 		schemas: (PositionalSchema | VariadicPositionalSchema)[],
-	): { positionals: any[]; rest: any } {
+	): {
+		positionals: any[]
+		rest: any
+	} {
 		const positionals: any[] = []
 		let rest: any = undefined
 
@@ -2019,7 +2541,7 @@ class CLIImpl<
 									.replace(`${schema._name} `, '')
 									.replace(`${schema._name}: `, '')
 							: String(error)
-					throw new CLIError(`Argument "${schema._name}": ${message}`)
+					throw new CLIError(`Argument <${schema._name}>: ${message}`)
 				}
 			}
 
@@ -2035,7 +2557,7 @@ class CLIImpl<
 								.replace(`${variadicSchema._name} `, '')
 								.replace(`${variadicSchema._name}: `, '')
 						: String(error)
-				throw new CLIError(`Argument "${variadicSchema._name}": ${message}`)
+				throw new CLIError(`Argument <${variadicSchema._name}>: ${message}`)
 			}
 		} else {
 			for (let i = 0; i < schemas.length; i++) {
@@ -2051,14 +2573,14 @@ class CLIImpl<
 									.replace(`${schema._name} `, '')
 									.replace(`${schema._name}: `, '')
 							: String(error)
-					throw new CLIError(`Argument "${schema._name}": ${message}`)
+					throw new CLIError(`Argument <${schema._name}>: ${message}`)
 				}
 			}
 
 			if (args.length > schemas.length) {
 				const extra = args.slice(schemas.length)
 				throw new CLIError(
-					`Unexpected argument${extra.length > 1 ? 's' : ''}: ${joinWithAnd(extra)}`,
+					`Too many arguments provided\n\n  ${pc.dim('Expected:')} ${schemas.length} argument${schemas.length !== 1 ? 's' : ''}\n  ${pc.dim('Received:')} ${args.length} argument${args.length !== 1 ? 's' : ''}\n\n  ${pc.dim('Extra:')} ${extra.map((e) => pc.red(e)).join(', ')}`,
 				)
 			}
 		}

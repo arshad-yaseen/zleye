@@ -76,7 +76,12 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--name', 'ab']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`"--name must be at least 3 characters"`,
+				`
+				  "--name must be at least 3 characters
+
+				  \x1B[2m  Received: \x1B[22m\x1B[31m--name "ab" \x1B[2m(2 chars)\x1B[22m\x1B[39m
+				  \x1B[2m  Expected: \x1B[22m\x1B[32m--name "abx" \x1B[2m(3 chars)\x1B[22m\x1B[39m"
+				`,
 			)
 		})
 
@@ -91,7 +96,12 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--name', 'toolong']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`"--name must be at most 5 characters"`,
+				`
+				  "--name must be at most 5 characters
+
+				  \x1B[2m  Received: \x1B[22m\x1B[31m--name "toolong" \x1B[2m(7 chars)\x1B[22m\x1B[39m
+				  \x1B[2m  Expected: \x1B[22m\x1B[32m--name "toolo" \x1B[2m(5 chars)\x1B[22m\x1B[39m"
+				`,
 			)
 		})
 
@@ -106,7 +116,12 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--name', 'Test123']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`"--name must match pattern /^[a-z]+$/"`,
+				`
+				  "--name format is invalid
+
+				    \x1B[2mReceived:\x1B[22m \x1B[31m"Test123"\x1B[39m
+				    \x1B[2mPattern:\x1B[22m \x1B[36m/^[a-z]+$/\x1B[39m"
+				`,
 			)
 		})
 
@@ -121,7 +136,12 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--mode', 'test']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`"--mode must be one of dev or prod"`,
+				`
+				  "--mode must be one of: \x1B[36mdev\x1B[39m, \x1B[36mprod\x1B[39m
+
+				  \x1B[2m  Received: \x1B[22m\x1B[31m--mode test\x1B[39m
+				  \x1B[2m  Expected: \x1B[22m\x1B[32m--mode dev\x1B[39m"
+				`,
 			)
 		})
 
@@ -196,7 +216,12 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--count', 'abc']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`"--count must be a number, received string"`,
+				`
+				  "--count expects a numeric value
+
+				  \x1B[2m  Received: \x1B[22m\x1B[31m--count \x1B[31m"abc"\x1B[31m\x1B[39m
+				  \x1B[2m  Expected: \x1B[22m\x1B[32m\x1B[32m--count 42\x1B[32m\x1B[39m"
+				`,
 			)
 		})
 
@@ -204,7 +229,12 @@ describe('CLI Parser Tests', () => {
 			const program = cli().option('port', z.number().min(1024))
 			expect(() =>
 				program.parse(['--port', '80']),
-			).toThrowErrorMatchingInlineSnapshot(`"--port must be at least 1024"`)
+			).toThrowErrorMatchingInlineSnapshot(`
+			  "--port must be at least 1024
+
+			  \x1B[2m  Received: \x1B[22m\x1B[31m--port 80\x1B[39m
+			  \x1B[2m  Expected: \x1B[22m\x1B[32m--port 1024\x1B[39m"
+			`)
 		})
 
 		test('should pass number min validation', () => {
@@ -217,7 +247,12 @@ describe('CLI Parser Tests', () => {
 			const program = cli().option('port', z.number().max(65535))
 			expect(() =>
 				program.parse(['--port', '70000']),
-			).toThrowErrorMatchingInlineSnapshot(`"--port must be at most 65535"`)
+			).toThrowErrorMatchingInlineSnapshot(`
+			  "--port must be at most 65535
+
+			  \x1B[2m  Received: \x1B[22m\x1B[31m--port 70000\x1B[39m
+			  \x1B[2m  Expected: \x1B[22m\x1B[32m--port 65535\x1B[39m"
+			`)
 		})
 
 		test('should pass number max validation', () => {
@@ -230,7 +265,12 @@ describe('CLI Parser Tests', () => {
 			const program = cli().option('count', z.number().int())
 			expect(() =>
 				program.parse(['--count', '3.14']),
-			).toThrowErrorMatchingInlineSnapshot(`"--count must be an integer"`)
+			).toThrowErrorMatchingInlineSnapshot(`
+			  "--count must be a whole number
+
+			  \x1B[2m  Received: \x1B[22m\x1B[31m--count 3.14\x1B[39m
+			  \x1B[2m  Expected: \x1B[22m\x1B[32m--count 3\x1B[39m"
+			`)
 		})
 
 		test('should pass integer validation', () => {
@@ -243,7 +283,12 @@ describe('CLI Parser Tests', () => {
 			const program = cli().option('count', z.number().positive())
 			expect(() =>
 				program.parse(['--count', '0']),
-			).toThrowErrorMatchingInlineSnapshot(`"--count must be positive"`)
+			).toThrowErrorMatchingInlineSnapshot(`
+			  "--count must be positive
+
+			  \x1B[2m  Received: \x1B[22m\x1B[31m--count 0\x1B[39m
+			  \x1B[2m  Expected: \x1B[22m\x1B[32m--count 1\x1B[39m"
+			`)
 		})
 
 		test('should pass positive number validation', () => {
@@ -256,7 +301,12 @@ describe('CLI Parser Tests', () => {
 			const program = cli().option('offset', z.number().negative())
 			expect(() =>
 				program.parse(['--offset', '0']),
-			).toThrowErrorMatchingInlineSnapshot(`"--offset must be negative"`)
+			).toThrowErrorMatchingInlineSnapshot(`
+			  "--offset must be negative
+
+			  \x1B[2m  Received: \x1B[22m\x1B[31m--offset 0\x1B[39m
+			  \x1B[2m  Expected: \x1B[22m\x1B[32m--offset -1\x1B[39m"
+			`)
 		})
 
 		test('should pass negative number validation', () => {
@@ -390,7 +440,14 @@ describe('CLI Parser Tests', () => {
 				.option('file', z.string())
 			expect(() =>
 				program.parse(['--verbose', 'file.txt', '--file', 'other.txt']),
-			).toThrowErrorMatchingInlineSnapshot(`"Unexpected argument: file.txt"`)
+			).toThrowErrorMatchingInlineSnapshot(`
+			  "Too many arguments provided
+
+			    \x1B[2mExpected:\x1B[22m 0 arguments
+			    \x1B[2mReceived:\x1B[22m 1 argument
+
+			    \x1B[2mExtra:\x1B[22m \x1B[31mfile.txt\x1B[39m"
+			`)
 		})
 	})
 
@@ -431,7 +488,14 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--ports', '8080,abc,3000']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`"--ports[1] must be a number, received string"`,
+				`
+				  "--ports has invalid items
+
+				    \x1B[31m>\x1B[39m Item 2 expects a numeric value
+
+				  \x1B[2m  Received: \x1B[22m\x1B[31m--ports 8080,abc,3000\x1B[39m
+				  \x1B[2m  Expected: \x1B[22m\x1B[32m--ports 8080,42,3000\x1B[39m"
+				`,
 			)
 		})
 
@@ -440,7 +504,12 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--items', 'single']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`"--items must have at least 2 items"`,
+				`
+				  "--items needs at least 2 items
+
+				  \x1B[2m  Received: \x1B[22m\x1B[31m--items single \x1B[2m(1 items)\x1B[22m\x1B[39m
+				  \x1B[2m  Expected: \x1B[22m\x1B[32m--items value,value \x1B[2m(2 items)\x1B[22m\x1B[39m"
+				`,
 			)
 		})
 
@@ -455,7 +524,12 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--items', 'a,b,c']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`"--items must have at most 2 items"`,
+				`
+				  "--items allows at most 2 items
+
+				  \x1B[2m  Received: \x1B[22m\x1B[31m--items a,b,c \x1B[2m(3 items)\x1B[22m\x1B[39m
+				  \x1B[2m  Expected: \x1B[22m\x1B[32m--items a,b \x1B[2m(2 items)\x1B[22m\x1B[39m"
+				`,
 			)
 		})
 
@@ -487,7 +561,14 @@ describe('CLI Parser Tests', () => {
 			)
 			expect(() =>
 				program.parse(['--ports', '80,3000']),
-			).toThrowErrorMatchingInlineSnapshot(`"--ports[0] must be at least 1024"`)
+			).toThrowErrorMatchingInlineSnapshot(`
+			  "--ports has invalid items
+
+			    \x1B[31m>\x1B[39m Item 1 must be at least 1024
+
+			  \x1B[2m  Received: \x1B[22m\x1B[31m--ports 80,3000\x1B[39m
+			  \x1B[2m  Expected: \x1B[22m\x1B[32m--ports 1024,3000\x1B[39m"
+			`)
 		})
 
 		test('should trim array items', () => {
@@ -590,7 +671,12 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--server.port', 'abc']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`"--server.port must be a number, received string"`,
+				`
+				  "--server.port expects a numeric value
+
+				  \x1B[2m  Received: \x1B[22m\x1B[31m--server.port \x1B[31m"abc"\x1B[31m\x1B[39m
+				  \x1B[2m  Expected: \x1B[22m\x1B[32m\x1B[32m--server.port 42\x1B[32m\x1B[39m"
+				`,
 			)
 		})
 
@@ -603,7 +689,12 @@ describe('CLI Parser Tests', () => {
 			)
 			expect(() =>
 				program.parse(['--server.unknown', 'value']),
-			).toThrowErrorMatchingInlineSnapshot(`"Unknown option key: unknown"`)
+			).toThrowErrorMatchingInlineSnapshot(`
+			  "Property 'unknown' is not recognized
+
+			    \x1B[2mAvailable properties:\x1B[22m
+			      \x1B[36mhost\x1B[39m"
+			`)
 		})
 
 		test('should handle deeply nested objects', () => {
@@ -648,7 +739,12 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--counts.a', 'abc']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`"--counts.a must be a number, received string"`,
+				`
+				  "--counts.a expects a numeric value
+
+				  \x1B[2m  Received: \x1B[22m\x1B[31m--counts.a \x1B[31m"abc"\x1B[31m\x1B[39m
+				  \x1B[2m  Expected: \x1B[22m\x1B[32m\x1B[32m--counts.a 42\x1B[32m\x1B[39m"
+				`,
 			)
 		})
 
@@ -767,7 +863,12 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--value', 'hi']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`"--value must be at least 5 characters"`,
+				`
+				  "--value must be at least 5 characters
+
+				  \x1B[2m  Received: \x1B[22m\x1B[31m--value "hi" \x1B[2m(2 chars)\x1B[22m\x1B[39m
+				  \x1B[2m  Expected: \x1B[22m\x1B[32m--value "hixxx" \x1B[2m(5 chars)\x1B[22m\x1B[39m"
+				`,
 			)
 		})
 
@@ -823,7 +924,12 @@ describe('CLI Parser Tests', () => {
 		test('should reject invalid positional type', () => {
 			const program = cli().positional('count', z.number())
 			expect(() => program.parse(['abc'])).toThrowErrorMatchingInlineSnapshot(
-				`"Argument "count": must be a number, received string"`,
+				`
+				  "Argument <count>: expects a numeric value
+
+				  \x1B[2m  Received: \x1B[22m\x1B[31mcount \x1B[31m"abc"\x1B[31m\x1B[39m
+				  \x1B[2m  Expected: \x1B[22m\x1B[32mcount 42\x1B[39m"
+				`,
 			)
 		})
 
@@ -845,7 +951,12 @@ describe('CLI Parser Tests', () => {
 		test('should validate positional constraints', () => {
 			const program = cli().positional('port', z.number().min(1024).max(65535))
 			expect(() => program.parse(['80'])).toThrowErrorMatchingInlineSnapshot(
-				`"Argument "port": must be at least 1024"`,
+				`
+				  "Argument <port>: must be at least 1024
+
+				  \x1B[2m  Received: \x1B[22m\x1B[31mport 80\x1B[39m
+				  \x1B[2m  Expected: \x1B[22m\x1B[32mport 1024\x1B[39m"
+				`,
 			)
 		})
 
@@ -871,7 +982,14 @@ describe('CLI Parser Tests', () => {
 			const program = cli().positional('file', z.string())
 			expect(() =>
 				program.parse(['file1.txt', 'file2.txt']),
-			).toThrowErrorMatchingInlineSnapshot(`"Unexpected argument: file2.txt"`)
+			).toThrowErrorMatchingInlineSnapshot(`
+			  "Too many arguments provided
+
+			    \x1B[2mExpected:\x1B[22m 1 argument
+			    \x1B[2mReceived:\x1B[22m 2 arguments
+
+			    \x1B[2mExtra:\x1B[22m \x1B[31mfile2.txt\x1B[39m"
+			`)
 		})
 
 		test('should transform positional values', () => {
@@ -891,7 +1009,14 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['restart']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`"Argument "command": must be one of start or stop"`,
+				`
+				  "Argument <command>: must be one of: \x1B[36mstart\x1B[39m, \x1B[36mstop\x1B[39m
+
+				  \x1B[2m  Received: \x1B[22m\x1B[31mcommand restart\x1B[39m
+				  \x1B[2m  Expected: \x1B[22m\x1B[32mcommand start\x1B[39m
+
+				  \x1B[2mDid you mean\x1B[22m \x1B[32mstart\x1B[39m\x1B[2m?\x1B[22m"
+				`,
 			)
 		})
 
@@ -947,7 +1072,12 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['1', 'abc', '3']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`"Argument "counts": counts[1] must be a number, received string"`,
+				`
+				  "Argument <counts>: counts[1] expects a numeric value
+
+				  \x1B[2m  Received: \x1B[22m\x1B[31mcounts[1] \x1B[31m"abc"\x1B[31m\x1B[39m
+				  \x1B[2m  Expected: \x1B[22m\x1B[32mcounts[1] 42\x1B[39m"
+				`,
 			)
 		})
 
@@ -965,7 +1095,12 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['80', '3000']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`"Argument "ports": ports[0] must be at least 1024"`,
+				`
+				  "Argument <ports>: ports[0] must be at least 1024
+
+				  \x1B[2m  Received: \x1B[22m\x1B[31mports[0] 80\x1B[39m
+				  \x1B[2m  Expected: \x1B[22m\x1B[32mports[0] 1024\x1B[39m"
+				`,
 			)
 		})
 
@@ -1110,7 +1245,12 @@ describe('CLI Parser Tests', () => {
 				.action(() => {})
 			expect(() =>
 				program.parse(['build', '--threads', '0']),
-			).toThrowErrorMatchingInlineSnapshot(`"--threads must be at least 1"`)
+			).toThrowErrorMatchingInlineSnapshot(`
+			  "--threads must be at least 1
+
+			  \x1B[2m  Received: \x1B[22m\x1B[31m--threads 0\x1B[39m
+			  \x1B[2m  Expected: \x1B[22m\x1B[32m--threads 1\x1B[39m"
+			`)
 		})
 
 		test('should handle command option defaults', () => {
@@ -1132,7 +1272,12 @@ describe('CLI Parser Tests', () => {
 			program.command('build', {}).action(() => {})
 			expect(() =>
 				program.parse(['unknown']),
-			).toThrowErrorMatchingInlineSnapshot(`"Unknown command: unknown"`)
+			).toThrowErrorMatchingInlineSnapshot(`
+			  "Command 'unknown' not found
+
+			    \x1B[2mAvailable commands:\x1B[22m
+			      \x1B[32mbuild\x1B[39m"
+			`)
 		})
 
 		test('should handle async command action', async () => {
@@ -1193,7 +1338,11 @@ describe('CLI Parser Tests', () => {
 		test('should reject unknown alias', () => {
 			const program = cli().option('verbose', z.boolean())
 			expect(() => program.parse(['-x'])).toThrowErrorMatchingInlineSnapshot(
-				`"Unknown option: -x"`,
+				`
+				  "-x is not recognized
+
+				    \x1B[2mNo aliases are defined for this command\x1B[22m"
+				`,
 			)
 		})
 
@@ -1238,7 +1387,12 @@ describe('CLI Parser Tests', () => {
 			const program = cli()
 			expect(() =>
 				program.parse(['--unknown']),
-			).toThrowErrorMatchingInlineSnapshot(`"Unknown option: --unknown"`)
+			).toThrowErrorMatchingInlineSnapshot(`
+			  "--unknown is not recognized
+
+			    \x1B[2mAvailable options:\x1B[22m
+			  "
+			`)
 		})
 
 		test('should show helpful error for missing required option', () => {
@@ -1253,7 +1407,12 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--port', 'abc']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`"--port must be a number, received string"`,
+				`
+				  "--port expects a numeric value
+
+				  \x1B[2m  Received: \x1B[22m\x1B[31m--port \x1B[31m"abc"\x1B[31m\x1B[39m
+				  \x1B[2m  Expected: \x1B[22m\x1B[32m\x1B[32m--port 42\x1B[32m\x1B[39m"
+				`,
 			)
 		})
 
@@ -1261,14 +1420,24 @@ describe('CLI Parser Tests', () => {
 			const program = cli().option('port', z.number().min(1024))
 			expect(() =>
 				program.parse(['--port', '80']),
-			).toThrowErrorMatchingInlineSnapshot(`"--port must be at least 1024"`)
+			).toThrowErrorMatchingInlineSnapshot(`
+			  "--port must be at least 1024
+
+			  \x1B[2m  Received: \x1B[22m\x1B[31m--port 80\x1B[39m
+			  \x1B[2m  Expected: \x1B[22m\x1B[32m--port 1024\x1B[39m"
+			`)
 		})
 
 		test('should show helpful error for invalid choice', () => {
 			const program = cli().option('env', z.string().choices(['dev', 'prod']))
 			expect(() =>
 				program.parse(['--env', 'test']),
-			).toThrowErrorMatchingInlineSnapshot(`"--env must be one of dev or prod"`)
+			).toThrowErrorMatchingInlineSnapshot(`
+			  "--env must be one of: \x1B[36mdev\x1B[39m, \x1B[36mprod\x1B[39m
+
+			  \x1B[2m  Received: \x1B[22m\x1B[31m--env test\x1B[39m
+			  \x1B[2m  Expected: \x1B[22m\x1B[32m--env dev\x1B[39m"
+			`)
 		})
 
 		test('should show helpful error for array item validation', () => {
@@ -1276,14 +1445,26 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--ports', '80,abc,3000']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`"--ports[1] must be a number, received string"`,
+				`
+				  "--ports has invalid items
+
+				    \x1B[31m>\x1B[39m Item 2 expects a numeric value
+
+				  \x1B[2m  Received: \x1B[22m\x1B[31m--ports 80,abc,3000\x1B[39m
+				  \x1B[2m  Expected: \x1B[22m\x1B[32m--ports 80,42,3000\x1B[39m"
+				`,
 			)
 		})
 
 		test('should show helpful error for positional validation', () => {
 			const program = cli().positional('count', z.number())
 			expect(() => program.parse(['abc'])).toThrowErrorMatchingInlineSnapshot(
-				`"Argument "count": must be a number, received string"`,
+				`
+				  "Argument <count>: expects a numeric value
+
+				  \x1B[2m  Received: \x1B[22m\x1B[31mcount \x1B[31m"abc"\x1B[31m\x1B[39m
+				  \x1B[2m  Expected: \x1B[22m\x1B[32mcount 42\x1B[39m"
+				`,
 			)
 		})
 
@@ -1291,7 +1472,14 @@ describe('CLI Parser Tests', () => {
 			const program = cli().positional('file', z.string())
 			expect(() =>
 				program.parse(['file1', 'file2']),
-			).toThrowErrorMatchingInlineSnapshot(`"Unexpected argument: file2"`)
+			).toThrowErrorMatchingInlineSnapshot(`
+			  "Too many arguments provided
+
+			    \x1B[2mExpected:\x1B[22m 1 argument
+			    \x1B[2mReceived:\x1B[22m 2 arguments
+
+			    \x1B[2mExtra:\x1B[22m \x1B[31mfile2\x1B[39m"
+			`)
 		})
 	})
 
@@ -1622,7 +1810,12 @@ describe('CLI Parser Tests', () => {
 		test('should reject flag that looks like number', () => {
 			const program = cli()
 			expect(() => program.parse(['--123'])).toThrowErrorMatchingInlineSnapshot(
-				`"Unknown option: --123"`,
+				`
+				  "--123 is not recognized
+
+				    \x1B[2mAvailable options:\x1B[22m
+				  "
+				`,
 			)
 		})
 
@@ -1654,7 +1847,12 @@ describe('CLI Parser Tests', () => {
 			)
 			expect(() =>
 				program.parse(['--value.type', 'c']),
-			).toThrowErrorMatchingInlineSnapshot(`"--value.type must be one of a"`)
+			).toThrowErrorMatchingInlineSnapshot(`
+			  "--value.type must be one of: \x1B[36ma\x1B[39m
+
+			  \x1B[2m  Received: \x1B[22m\x1B[31m--value.type c\x1B[39m
+			  \x1B[2m  Expected: \x1B[22m\x1B[32m--value.type a\x1B[39m"
+			`)
 		})
 
 		test('should handle command returning undefined', () => {
@@ -1770,7 +1968,11 @@ describe('CLI Parser Tests', () => {
 			)
 			expect(() =>
 				program.parse(['--no-debug']),
-			).toThrowErrorMatchingInlineSnapshot(`"Unknown option: --no-debug"`)
+			).toThrowErrorMatchingInlineSnapshot(`
+			  "--no-debug cannot be negated
+
+			    \x1B[2mThe --no- prefix only works with boolean flags that default to true\x1B[22m"
+			`)
 		})
 
 		test('should not accept --no- for union without boolean', () => {
@@ -1780,7 +1982,11 @@ describe('CLI Parser Tests', () => {
 			)
 			expect(() =>
 				program.parse(['--no-mode']),
-			).toThrowErrorMatchingInlineSnapshot(`"Unknown option: --no-mode"`)
+			).toThrowErrorMatchingInlineSnapshot(`
+			  "--no-mode cannot be negated
+
+			    \x1B[2mThe --no- prefix only works with boolean flags that default to true\x1B[22m"
+			`)
 		})
 
 		test('should handle nested union with boolean default true', () => {
@@ -1831,7 +2037,12 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--env.NODE_ENV', 'invalid']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`"--env.NODE_ENV must be one of development or production"`,
+				`
+				  "--env.NODE_ENV must be one of: \x1B[36mdevelopment\x1B[39m, \x1B[36mproduction\x1B[39m
+
+				  \x1B[2m  Received: \x1B[22m\x1B[31m--env.NODE_ENV invalid\x1B[39m
+				  \x1B[2m  Expected: \x1B[22m\x1B[32m--env.NODE_ENV development\x1B[39m"
+				`,
 			)
 		})
 
@@ -1874,7 +2085,12 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--levels.critical', '10']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`"--levels.critical must be at most 5"`,
+				`
+				  "--levels.critical must be at most 5
+
+				  \x1B[2m  Received: \x1B[22m\x1B[31m--levels.critical 10\x1B[39m
+				  \x1B[2m  Expected: \x1B[22m\x1B[32m--levels.critical 5\x1B[39m"
+				`,
 			)
 		})
 	})
@@ -1907,7 +2123,12 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--output', 'invalid']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`"--output must be one of none, minimal, normal, detailed, or verbose"`,
+				`
+				  "--output must be one of: \x1B[36mnone\x1B[39m, \x1B[36mminimal\x1B[39m, \x1B[36mnormal\x1B[39m, \x1B[36mdetailed\x1B[39m, \x1B[36mverbose\x1B[39m
+
+				  \x1B[2m  Received: \x1B[22m\x1B[31m--output invalid\x1B[39m
+				  \x1B[2m  Expected: \x1B[22m\x1B[32m--output none\x1B[39m"
+				`,
 			)
 		})
 
@@ -2160,25 +2381,45 @@ describe('CLI Parser Tests', () => {
 			expect(() =>
 				program.parse(['--complex', 'd']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`"--complex must be one of a, b, or c"`,
+				`
+				  "--complex must be one of: \x1B[36ma\x1B[39m, \x1B[36mb\x1B[39m, \x1B[36mc\x1B[39m
+
+				  \x1B[2m  Received: \x1B[22m\x1B[31m--complex d\x1B[39m
+				  \x1B[2m  Expected: \x1B[22m\x1B[32m--complex a\x1B[39m"
+				`,
 			)
 
 			expect(() =>
 				program.parse(['--complex', '101']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`"--complex must be one of a, b, or c"`,
+				`
+				  "--complex must be one of: \x1B[36ma\x1B[39m, \x1B[36mb\x1B[39m, \x1B[36mc\x1B[39m
+
+				  \x1B[2m  Received: \x1B[22m\x1B[31m--complex 101\x1B[39m
+				  \x1B[2m  Expected: \x1B[22m\x1B[32m--complex a\x1B[39m"
+				`,
 			)
 
 			expect(() =>
 				program.parse(['--complex.type', 'invalid']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`"--complex.type must be one of custom"`,
+				`
+				  "--complex.type must be one of: \x1B[36mcustom\x1B[39m
+
+				  \x1B[2m  Received: \x1B[22m\x1B[31m--complex.type invalid\x1B[39m
+				  \x1B[2m  Expected: \x1B[22m\x1B[32m--complex.type custom\x1B[39m"
+				`,
 			)
 
 			expect(() =>
 				program.parse(['--complex.type', 'custom', '--complex.value', 'ab']),
 			).toThrowErrorMatchingInlineSnapshot(
-				`"--complex.value must be at least 3 characters"`,
+				`
+				  "--complex.value must be at least 3 characters
+
+				  \x1B[2m  Received: \x1B[22m\x1B[31m--complex.value "ab" \x1B[2m(2 chars)\x1B[22m\x1B[39m
+				  \x1B[2m  Expected: \x1B[22m\x1B[32m--complex.value "abx" \x1B[2m(3 chars)\x1B[22m\x1B[39m"
+				`,
 			)
 		})
 	})

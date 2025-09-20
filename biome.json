@@ -14,7 +14,12 @@
 			"style": {
 				"noNonNullAssertion": "off",
 				"noParameterAssign": "off",
-				"noUnusedTemplateLiteral": "off"
+				"noUnusedTemplateLiteral": "off",
+				"useTemplate": "off"
+			},
+			"complexity": {
+				"noStaticOnlyClass": "off",
+				"noThisInStatic": "off"
 			}
 		}
 	},
