@@ -1,7 +1,15 @@
-import fs from 'node:fs'
 import { cli, z } from './src'
 
-const program = cli().option('minify', z.boolean().default(true))
+const program = cli().option(
+	'minify',
+	z.union(
+		z.boolean(),
+		z.object({
+			name: z.string(),
+			hello: z.boolean(),
+		}),
+	),
+)
 
 console.time('time')
 const result = program.parse()

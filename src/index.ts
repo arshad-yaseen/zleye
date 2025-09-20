@@ -1158,7 +1158,7 @@ class HelpFormatter {
 		const message = error instanceof Error ? error.message : String(error)
 		console.error(`${pc.red(pc.bold('Error:'))} ${message}`)
 		console.error(
-			`\n${pc.dim(pc.white(`Run with ${pc.bold(pc.blue('--help'))} for usage information`))}`,
+			`\n${pc.dim(pc.blue(`Run with ${pc.bold('--help')} for usage information`))}`,
 		)
 	}
 

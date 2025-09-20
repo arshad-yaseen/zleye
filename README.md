@@ -11,7 +11,7 @@
 | 2 | cac           | 633,631    | 1,578.20              | ±0.70%   | 316,816  |
 | 3 | zlye          | 1,403,217  | 712.65                | ±0.90%   | 701,609  |
 
-> **zlye** achieves over **1.4 million ops/sec** in benchmarks, more than 74× faster than yargs, 4× faster than commander, and 2× faster than cac.  
+**zlye** achieves over **1.4 million ops/sec** in benchmarks, more than 74× faster than yargs, 4× faster than commander, and 2× faster than cac.  
 
 Run benchmarks yourself: `bun run bench`
 
