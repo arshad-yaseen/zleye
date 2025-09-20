@@ -1,10 +1,6 @@
-# zlye
-
-<div align="center">
+# zlye ✨
 
 **The fastest, most type-safe CLI framework for Node.js**
-
-</div>
 
 ## Performance
 
@@ -21,12 +17,12 @@ Run benchmarks yourself: `bun run bench`
 
 ## Why zlye?
 
-✨ **Type-safe from input to output** - Full TypeScript support with inferred types  
-🚀 **Blazing fast** - 74x faster than yargs, 4x faster than commander  
-🎯 **Zod-like schema validation** - Familiar, powerful validation API  
-🎨 **Beautiful help & errors** - Gorgeous, helpful CLI output with smart suggestions  
-📦 **Zero dependencies** - Lightweight and reliable  
-🔧 **Flexible** - Supports commands, flags, positionals, unions, and more  
+- ✨ **Type-safe from input to output** - Full TypeScript support with inferred types  
+- 🚀 **Blazing fast** - 74x faster than yargs, 4x faster than commander  
+- 🎯 **Zod-like schema validation** - Familiar, powerful validation API  
+- 🎨 **Beautiful help & errors** - Gorgeous, helpful CLI output with smart suggestions  
+- 📦 **Zero dependencies** - Lightweight and reliable  
+- 🔧 **Flexible** - Supports commands, flags, positionals, unions, and more  
 
 ## Getting Started
 
