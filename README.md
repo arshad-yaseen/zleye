@@ -382,6 +382,25 @@ $ myapp build.js --watch --verbose
 # rest: ["--watch", "--verbose"]
 ```
 
+`.rest()` is particularly useful when you need to accept multiple values that can appear anywhere in the command line (beginning, middle, end), unlike positional arguments which are order-dependent and limited in count.
+
+```typescript
+// Simple build tool example
+const { rest: entries } = cli()
+  .option('minify', z.boolean())
+  .option('watch', z.boolean())
+  .rest('entries', z.string())
+  .parse()
+```
+
+```bash
+$ build src/index.ts src/cli.ts --minify
+# entries: ["src/index.ts", "src/cli.ts"]
+
+$ build --minify --watch src/app.ts src/utils.ts  
+# entries: ["src/app.ts", "src/utils.ts"]
+```
+
 ### Custom Validation Messages
 
 ```typescript
