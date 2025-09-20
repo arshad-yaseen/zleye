@@ -1,15 +1,9 @@
 import { cli, z } from './src'
 
-const program = cli().option(
-	'minify',
-	z.union(
-		z.boolean(),
-		z.object({
-			name: z.string(),
-			hello: z.boolean(),
-		}),
-	),
-)
+const program = cli()
+	.option('verbose', z.boolean().alias('v'))
+	.option('quiet', z.boolean().alias('q'))
+	.option('force', z.boolean().default(false).describe('Skip confirmations'))
 
 console.time('time')
 const result = program.parse()

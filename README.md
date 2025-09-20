@@ -286,6 +286,18 @@ Error: --mode must be one of: dev, test, prod
   Did you mean dev?
 ```
 
+```bash
+$ myapp -s
+
+Error: -s is not recognized
+
+  Available aliases:
+    -v for --verbose
+    -q for --quiet
+
+Run with --help for usage information
+```
+
 ## Advanced Features
 
 ### Transform Values
