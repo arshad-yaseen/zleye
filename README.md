@@ -144,10 +144,10 @@ Combine multiple types for ultimate flexibility:
 ```typescript
 cli()
   .option('input', z.union(
-    z.boolean(),
-    z.string(),
+    z.boolean().describe('Enable input'),
+    z.string().describe('File path'),
     z.object({
-      file: z.string(),
+      file: z.string().describe('File path'),
       encoding: z.string().choices(['utf8', 'utf16', 'ascii']).default('utf8').describe('File encoding')
     })
   ))
