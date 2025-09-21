@@ -1186,8 +1186,6 @@ class HelpFormatter {
 		} else {
 			const parts = [this.cli._name || 'cli']
 			if (this.cli._commands.length) parts.push(pc.blue('<command>'))
-			if (Object.keys(this.cli._options).length)
-				parts.push(pc.blue('[...flags]'))
 
 			if (this.cli._positionals.length) {
 				parts.push(
@@ -1198,6 +1196,9 @@ class HelpFormatter {
 					),
 				)
 			}
+
+			if (Object.keys(this.cli._options).length)
+				parts.push(pc.blue('[...flags]'))
 
 			console.log(`${pc.bold('Usage:')} ${parts.join(' ')}`)
 		}
@@ -1585,7 +1586,6 @@ class HelpFormatter {
 
 	private buildCommandUsage(command: Command): string {
 		const parts = [this.cli._name || 'cli', command.name]
-		if (Object.keys(command.options).length) parts.push(pc.cyan('[...flags]'))
 		if (command.positionals) {
 			parts.push(
 				...command.positionals.map((p) =>
@@ -1595,6 +1595,7 @@ class HelpFormatter {
 				),
 			)
 		}
+		if (Object.keys(command.options).length) parts.push(pc.cyan('[...flags]'))
 		return parts.join(' ')
 	}
 
@@ -1602,9 +1603,9 @@ class HelpFormatter {
 		const lines = example.split('\n')
 		if (lines.length > 1) {
 			console.log(`  ${lines[0]}`)
-			console.log(`  ${pc.green(lines.slice(1).join('\n  '))}`)
+			console.log(`  ${lines.slice(1).join('\n  ')}`)
 		} else {
-			console.log(`  ${pc.green(example)}`)
+			console.log(`  ${example}`)
 		}
 		console.log()
 	}
