@@ -1585,6 +1585,7 @@ class HelpFormatter {
 
 	private buildCommandUsage(command: Command): string {
 		const parts = [this.cli._name || 'cli', command.name]
+		if (Object.keys(command.options).length) parts.push(pc.cyan('[...flags]'))
 		if (command.positionals) {
 			parts.push(
 				...command.positionals.map((p) =>
@@ -1594,7 +1595,6 @@ class HelpFormatter {
 				),
 			)
 		}
-		if (Object.keys(command.options).length) parts.push(pc.cyan('[...flags]'))
 		return parts.join(' ')
 	}
 
