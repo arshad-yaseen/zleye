@@ -263,7 +263,7 @@ class ErrorFormatter {
 			const arr = schema as ArraySchema<any>
 			const item = this.getExampleValue(arr._itemSchema)
 			const examples = Array(arr._minLength || 1).fill(item)
-			return pc.green(`${prefix}${flagName} ${examples.join(',')}`)
+			return `${prefix}${flagName} ${examples.join(',')}`
 		}
 
 		if (type === 'object') {
