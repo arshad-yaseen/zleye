@@ -1,20 +1,24 @@
 import { cli, z } from './src'
 
-const program = cli().option(
-	'input',
-	z.union(
-		z.boolean(),
-		z.string(),
-		z.object({
-			file: z.string(),
-			encoding: z
-				.string()
-				.choices(['utf8', 'utf16', 'ascii'])
-				.default('utf8')
-				.describe('File encoding'),
-		}),
-	),
-)
+const program = cli()
+	.option(
+		'letter',
+		z.union(
+			z.string().choices(['a', 'b', 'c']),
+			z.array(z.string().choices(['a', 'b', 'c'])),
+		),
+	)
+	.option(
+		'dts',
+		z
+			.union(
+				z.boolean(),
+				z.object({
+					splitting: z.boolean(),
+				}),
+			)
+			.default(true),
+	)
 
 console.time('time')
 const result = program.parse()

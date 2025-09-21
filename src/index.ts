@@ -1468,10 +1468,24 @@ class HelpFormatter {
 
 		for (const [, groupSchemas] of nonObjectGroups) {
 			for (const s of groupSchemas) {
+				let desc = this.getOptionDescription(s)
+
+				if (
+					s._type === 'boolean' &&
+					!s._defaultValue &&
+					schema._defaultValue === true
+				) {
+					if (!desc.includes('default:')) {
+						desc = desc
+							? `${desc} ${pc.dim('(default: true)')}`
+							: pc.dim('(default: true)')
+					}
+				}
+
 				rows.push({
 					flags: this.getOptionFlags(key, s),
 					type: this.getOptionType(key, s),
-					desc: this.getOptionDescription(s),
+					desc: desc,
 				})
 			}
 		}
