@@ -908,7 +908,6 @@ class UnionSchemaImpl<T extends readonly Schema[]>
 							specificity = validKeys.length * 10
 							if (missingFields.length) specificity += 5
 
-							// Check for invalid properties to show better error
 							const invalidKeys = providedKeys.filter(
 								(k) => !(k in objSchema._shape!),
 							)
@@ -947,7 +946,6 @@ class UnionSchemaImpl<T extends readonly Schema[]>
 		const examples: string[] = []
 		const seenTypes = new Set<string>()
 
-		// Check what was provided to give better suggestions
 		const providedKeys =
 			typeof providedValue === 'object' &&
 			providedValue !== null &&
@@ -965,7 +963,6 @@ class UnionSchemaImpl<T extends readonly Schema[]>
 				} else if (objSchema._shape) {
 					const keys = Object.keys(objSchema._shape)
 					if (keys.length) {
-						// Show all available properties if user provided invalid ones
 						if (providedKeys.length) {
 							examples.push(
 								`${pc.dim('Object properties:')}\n${keys.map((k) => `    ${pc.green(`--${flagName}.${k}`)} <value>`).join('\n')}`,
@@ -1354,26 +1351,6 @@ class HelpFormatter {
 					// @ts-expect-error
 					...this.buildOptionRows(schema._shape, fullKey, addedNoVersions),
 				)
-
-				if (schema._defaultValue) {
-					// @ts-expect-error
-					for (const [propKey, propSchema] of Object.entries(schema._shape)) {
-						const nestedKey = `${fullKey}.${propKey}`
-						if (
-							// @ts-expect-error
-							propSchema._type === 'boolean' &&
-							schema._defaultValue[propKey] === true &&
-							!addedNoVersions.has(nestedKey)
-						) {
-							addedNoVersions.add(nestedKey)
-							rows.push({
-								flags: `    --no-${nestedKey}`,
-								type: pc.dim(''),
-								desc: this.generateNoDescription(nestedKey),
-							})
-						}
-					}
-				}
 			} else {
 				rows.push({
 					flags: this.getOptionFlags(fullKey, schema),
@@ -1381,7 +1358,8 @@ class HelpFormatter {
 					desc: this.getOptionDescription(schema),
 				})
 
-				if (!addedNoVersions.has(fullKey) && this.shouldAddNoVersion(schema)) {
+				// Add --no- version for ALL boolean flags
+				if (schema._type === 'boolean' && !addedNoVersions.has(fullKey)) {
 					addedNoVersions.add(fullKey)
 					rows.push({
 						flags: `    --no-${fullKey}`,
@@ -1393,25 +1371,6 @@ class HelpFormatter {
 		}
 
 		return rows
-	}
-
-	private shouldAddNoVersion(schema: Schema): boolean {
-		if (schema._type === 'boolean' && schema._defaultValue === true) return true
-
-		if (schema._type === 'union') {
-			const unionSchema = schema as UnionSchema<any>
-			if (
-				schema._defaultValue === true &&
-				unionSchema._schemas.some((s: any) => s._type === 'boolean')
-			)
-				return true
-			const booleanSchema = unionSchema._schemas.find(
-				(s: any) => s._type === 'boolean',
-			)
-			if (booleanSchema?._defaultValue === true) return true
-		}
-
-		return false
 	}
 
 	private generateNoDescription(key: string): string {
@@ -1448,41 +1407,12 @@ class HelpFormatter {
 			} else {
 				const objShape = (objSchema as ObjectSchema<any>)._shape!
 				rows.push(...this.buildOptionRows(objShape, key, addedNoVersions))
-
-				for (const [propKey, propSchema] of Object.entries(objShape)) {
-					const fullKey = `${key}.${propKey}`
-					if (
-						propSchema._type === 'boolean' &&
-						propSchema._defaultValue === true &&
-						!addedNoVersions.has(fullKey)
-					) {
-						addedNoVersions.add(fullKey)
-						rows.push({
-							flags: `    --no-${fullKey}`,
-							type: pc.dim(''),
-							desc: this.generateNoDescription(fullKey),
-						})
-					}
-				}
 			}
 		}
 
 		for (const [, groupSchemas] of nonObjectGroups) {
 			for (const s of groupSchemas) {
-				let desc = this.getOptionDescription(s)
-
-				if (
-					s._type === 'boolean' &&
-					!s._defaultValue &&
-					schema._defaultValue === true
-				) {
-					if (!desc.includes('default:')) {
-						desc = desc
-							? `${desc} ${pc.dim('(default: true)')}`
-							: pc.dim('(default: true)')
-					}
-				}
-
+				const desc = this.getOptionDescription(s)
 				rows.push({
 					flags: this.getOptionFlags(key, s),
 					type: this.getOptionType(key, s),
@@ -1491,7 +1421,11 @@ class HelpFormatter {
 			}
 		}
 
-		if (!addedNoVersions.has(key) && this.shouldAddNoVersion(schema)) {
+		// Add --no- version for boolean types in union
+		const hasBooleanSchema = schema._schemas.some(
+			(s: any) => s._type === 'boolean',
+		)
+		if (hasBooleanSchema && !addedNoVersions.has(key)) {
 			addedNoVersions.add(key)
 			rows.push({
 				flags: `    --no-${key}`,
@@ -1673,7 +1607,7 @@ class ArgumentParser {
 		for (const arg of args) {
 			if (arg.startsWith('--') && !arg.startsWith('--no-')) {
 				const [keyPath] = arg.slice(2).split('=')
-				const mainKey = keyPath.split('.')[0]
+				const mainKey = this.parseDotPath(keyPath)[0]
 
 				if (options[mainKey]) {
 					if (!occurrences.has(mainKey)) occurrences.set(mainKey, [])
@@ -1720,6 +1654,67 @@ class ArgumentParser {
 
 	private looksLikeNegativeNumber(arg: string): boolean {
 		return arg.startsWith('-') && /^\d/.test(arg.slice(1))
+	}
+
+	// Parse dot paths with support for quoted keys
+	private parseDotPath(path: string): string[] {
+		const keys: string[] = []
+		let current = ''
+		let inQuotes: string | null = null
+		let escaped = false
+
+		for (let i = 0; i < path.length; i++) {
+			const char = path[i]
+
+			if (escaped) {
+				current += char
+				escaped = false
+				continue
+			}
+
+			if (char === '\\') {
+				escaped = true
+				continue
+			}
+
+			if (!inQuotes && (char === '"' || char === "'")) {
+				inQuotes = char
+				continue
+			}
+
+			if (char === inQuotes) {
+				inQuotes = null
+				continue
+			}
+
+			if (char === '.' && !inQuotes) {
+				if (current) {
+					keys.push(current)
+					current = ''
+				}
+				continue
+			}
+
+			current += char
+		}
+
+		if (current) {
+			keys.push(current)
+		}
+
+		return keys
+	}
+
+	// Parse value with support for quoted strings
+	private parseValue(value: string): string {
+		// Remove surrounding quotes if present
+		if (
+			(value.startsWith('"') && value.endsWith('"')) ||
+			(value.startsWith("'") && value.endsWith("'"))
+		) {
+			return value.slice(1, -1)
+		}
+		return value
 	}
 
 	private parseOptionWithSchema(
@@ -1861,7 +1856,7 @@ class ArgumentParser {
 	): number {
 		if (arg.startsWith('--no-')) {
 			const keyPath = arg.slice(5).split('=')[0]
-			const keys = keyPath.split('.')
+			const keys = this.parseDotPath(keyPath)
 			const mainKey = keys[0]
 			const mainSchema = options[mainKey]
 
@@ -1870,7 +1865,7 @@ class ArgumentParser {
 				const availableOptions: string[] = []
 				for (const [k, s] of Object.entries(options)) {
 					availableOptions.push(`--${k}`)
-					if (this.shouldHandleNoVersion(s)) availableOptions.push(`--no-${k}`)
+					if (this.isBooleanSchema(s)) availableOptions.push(`--no-${k}`)
 				}
 
 				throw new CLIError(
@@ -1879,47 +1874,31 @@ class ArgumentParser {
 			}
 
 			if (keys.length > 1) {
-				if (mainSchema._type === 'union') {
-					const unionSchema = mainSchema as UnionSchema<any>
-
-					for (const s of unionSchema._schemas) {
-						if (s._type === 'object') {
-							const nestedSchema = this.getNestedSchema(s, keys.slice(1))
-							if (
-								nestedSchema &&
-								this.shouldHandleNoVersion(nestedSchema, s, keys.slice(1))
-							) {
-								this.setNestedValue(rawOptions, keyPath, false, options)
-								return 0
-							}
-						}
-					}
-				} else if (mainSchema._type === 'object') {
-					const nestedSchema = this.getNestedSchema(mainSchema, keys.slice(1))
-					if (
-						nestedSchema &&
-						this.shouldHandleNoVersion(nestedSchema, mainSchema, keys.slice(1))
-					) {
-						this.setNestedValue(rawOptions, keyPath, false, options)
-						return 0
-					}
+				// Handle nested boolean flags
+				const nestedSchema = this.getNestedSchema(mainSchema, keys.slice(1))
+				if (nestedSchema && this.isBooleanSchema(nestedSchema)) {
+					this.setNestedValue(rawOptions, keyPath, false, options)
+					return 0
 				}
 			} else {
-				if (this.shouldHandleNoVersion(mainSchema)) {
+				// Handle top-level boolean flags
+				if (this.isBooleanSchema(mainSchema)) {
 					this.setNestedValue(rawOptions, keyPath, false, options)
 					return 0
 				}
 			}
 
 			throw new CLIError(
-				`${arg} cannot be negated\n\n  ${pc.dim('The --no- prefix only works with boolean flags that default to true')}`,
+				`${arg} cannot be negated\n\n  ${pc.dim('The --no- prefix only works with boolean flags')}`,
 			)
 		}
 
 		const [keyPath, ...valueParts] = arg.slice(2).split('=')
 		const hasExplicitValue = valueParts.length > 0
-		const explicitValue = hasExplicitValue ? valueParts.join('=') : undefined
-		const keys = keyPath.split('.')
+		const explicitValue = hasExplicitValue
+			? this.parseValue(valueParts.join('='))
+			: undefined
+		const keys = this.parseDotPath(keyPath)
 		const mainKey = keys[0]
 		const schema = options[mainKey]
 
@@ -1928,7 +1907,7 @@ class ArgumentParser {
 			const availableOptions: string[] = []
 			for (const [k, s] of Object.entries(options)) {
 				availableOptions.push(`--${k}`)
-				if (this.shouldHandleNoVersion(s)) availableOptions.push(`--no-${k}`)
+				if (this.isBooleanSchema(s)) availableOptions.push(`--no-${k}`)
 			}
 
 			throw new CLIError(
@@ -1964,22 +1943,22 @@ class ArgumentParser {
 				(!args[index + 1].startsWith('-') ||
 					this.looksLikeNegativeNumber(args[index + 1]))
 			) {
-				value = args[index + 1]
+				value = this.parseValue(args[index + 1])
 				consumed = 1
 			} else if (expectsValue === 'union') {
 				value = true
 			} else {
 				const example = ErrorFormatter.formatCorrectUsage(
-					keyPath,
+					keys.join('.'),
 					undefined,
 					this.getSchemaAtPath(schema, keys.slice(1)),
 				)
 				throw new CLIError(
-					`--${keyPath} needs a value\n\n  ${pc.dim('Usage:')} ${example}`,
+					`--${keys.join('.')} needs a value\n\n  ${pc.dim('Usage:')} ${example}`,
 				)
 			}
 
-			this.setNestedValue(rawOptions, keyPath, value, options)
+			this.setNestedValue(rawOptions, keys, value, options)
 			this.flagValues.set(mainKey, value)
 		} else if (expectsValue === 'boolean') {
 			let value: any
@@ -1995,7 +1974,7 @@ class ArgumentParser {
 			} else {
 				value = true
 			}
-			this.setNestedValue(rawOptions, keyPath, value, options)
+			this.setNestedValue(rawOptions, keys, value, options)
 			this.flagValues.set(mainKey, value)
 		}
 
@@ -2026,42 +2005,13 @@ class ArgumentParser {
 		return current
 	}
 
-	private shouldHandleNoVersion(
-		schema: Schema | undefined,
-		parentSchema?: Schema,
-		nestedKeys?: string[],
-	): boolean {
-		if (!schema) return false
-
-		if (schema._type === 'boolean' && schema._defaultValue === true) return true
-
-		if (
-			parentSchema &&
-			parentSchema._type === 'object' &&
-			parentSchema._defaultValue &&
-			nestedKeys?.length === 1
-		) {
-			const key = nestedKeys[0]
-			if (
-				schema._type === 'boolean' &&
-				parentSchema._defaultValue[key] === true
-			)
-				return true
-		}
-
+	// Check if a schema is boolean (either directly or in a union)
+	private isBooleanSchema(schema: Schema): boolean {
+		if (schema._type === 'boolean') return true
 		if (schema._type === 'union') {
 			const unionSchema = schema as UnionSchema<any>
-			if (
-				schema._defaultValue === true &&
-				unionSchema._schemas.some((s: any) => s._type === 'boolean')
-			)
-				return true
-			const booleanSchema = unionSchema._schemas.find(
-				(s: any) => s._type === 'boolean',
-			)
-			if (booleanSchema?._defaultValue === true) return true
+			return unionSchema._schemas.some((s: any) => s._type === 'boolean')
 		}
-
 		return false
 	}
 
@@ -2205,7 +2155,7 @@ class ArgumentParser {
 
 		if (expectsValue === 'required') {
 			if (index + 1 < args.length && !args[index + 1].startsWith('-')) {
-				rawOptions[optionName] = args[index + 1]
+				rawOptions[optionName] = this.parseValue(args[index + 1])
 				return 1
 			}
 			const example = ErrorFormatter.formatCorrectUsage(
@@ -2219,7 +2169,7 @@ class ArgumentParser {
 		}
 
 		if (index + 1 < args.length && !args[index + 1].startsWith('-')) {
-			rawOptions[optionName] = args[index + 1]
+			rawOptions[optionName] = this.parseValue(args[index + 1])
 			return 1
 		}
 		rawOptions[optionName] = true
@@ -2228,11 +2178,13 @@ class ArgumentParser {
 
 	private setNestedValue(
 		obj: Record<string, any>,
-		key: string,
+		keyOrKeys: string | string[],
 		value: any,
 		options: Record<string, Schema>,
 	): void {
-		const keys = key.split('.')
+		const keys =
+			typeof keyOrKeys === 'string' ? this.parseDotPath(keyOrKeys) : keyOrKeys
+
 		let current = obj
 		let schemaPath: any = options
 
@@ -2244,11 +2196,11 @@ class ArgumentParser {
 				const schema = options[mainKey]
 				if (schema._type === 'union') {
 					throw new CLIError(
-						`Cannot mix value types for --${mainKey}\n\n  ${pc.dim('Previously set:')} --${mainKey} ${ErrorFormatter.formatValue(existingValue)}\n  ${pc.dim('Now trying:')} --${key} ${ErrorFormatter.formatValue(value)}\n\n  ${pc.dim('Use one approach consistently:')}\n    ${pc.green(`--${mainKey} value`)} ${pc.dim('for simple values')}\n    ${pc.green(`--${mainKey}.property value`)} ${pc.dim('for object properties')}`,
+						`Cannot mix value types for --${mainKey}\n\n  ${pc.dim('Previously set:')} --${mainKey} ${ErrorFormatter.formatValue(existingValue)}\n  ${pc.dim('Now trying:')} --${keys.join('.')} ${ErrorFormatter.formatValue(value)}\n\n  ${pc.dim('Use one approach consistently:')}\n    ${pc.green(`--${mainKey} value`)} ${pc.dim('for simple values')}\n    ${pc.green(`--${mainKey}.property value`)} ${pc.dim('for object properties')}`,
 					)
 				}
 				throw new CLIError(
-					`Cannot set property on non-object value\n\n  ${pc.dim('Flag:')} --${mainKey}\n  ${pc.dim('Current value:')} ${ErrorFormatter.formatValue(existingValue)}\n  ${pc.dim('Attempted:')} --${key} ${ErrorFormatter.formatValue(value)}`,
+					`Cannot set property on non-object value\n\n  ${pc.dim('Flag:')} --${mainKey}\n  ${pc.dim('Current value:')} ${ErrorFormatter.formatValue(existingValue)}\n  ${pc.dim('Attempted:')} --${keys.join('.')} ${ErrorFormatter.formatValue(value)}`,
 				)
 			}
 		}
@@ -2261,13 +2213,13 @@ class ArgumentParser {
 			} else if (typeof current[k] !== 'object' || Array.isArray(current[k])) {
 				const partialKey = keys.slice(0, i + 1).join('.')
 				throw new CLIError(
-					`Cannot set nested property\n\n  ${pc.dim('Path:')} --${key}\n  ${pc.dim('Conflict at:')} --${partialKey}\n  ${pc.dim('Current type:')} ${Array.isArray(current[k]) ? 'array' : typeof current[k]}`,
+					`Cannot set nested property\n\n  ${pc.dim('Path:')} --${keys.join('.')}\n  ${pc.dim('Conflict at:')} --${partialKey}\n  ${pc.dim('Current type:')} ${Array.isArray(current[k]) ? 'array' : typeof current[k]}`,
 				)
 			}
 
 			if (i === 0 && current[k]._unionValue !== undefined) {
 				throw new CLIError(
-					`Cannot switch to object form\n\n  ${pc.dim('Previously:')} --${k} ${ErrorFormatter.formatValue(current[k]._unionValue)}\n  ${pc.dim('Now trying:')} --${key} ${ErrorFormatter.formatValue(value)}\n\n  ${pc.dim('Use consistent form throughout')}`,
+					`Cannot switch to object form\n\n  ${pc.dim('Previously:')} --${k} ${ErrorFormatter.formatValue(current[k]._unionValue)}\n  ${pc.dim('Now trying:')} --${keys.join('.')} ${ErrorFormatter.formatValue(value)}\n\n  ${pc.dim('Use consistent form throughout')}`,
 				)
 			}
 

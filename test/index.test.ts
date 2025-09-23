@@ -1961,20 +1961,6 @@ describe('CLI Parser Tests', () => {
 			expect(result?.options.sourcemap).toBe('inline')
 		})
 
-		test('should not accept --no- for union with boolean default false', () => {
-			const program = cli().option(
-				'debug',
-				z.union(z.boolean().default(false), z.string()),
-			)
-			expect(() =>
-				program.parse(['--no-debug']),
-			).toThrowErrorMatchingInlineSnapshot(`
-			  "--no-debug cannot be negated
-
-			    \x1B[2mThe --no- prefix only works with boolean flags that default to true\x1B[22m"
-			`)
-		})
-
 		test('should not accept --no- for union without boolean', () => {
 			const program = cli().option(
 				'mode',
@@ -1985,7 +1971,7 @@ describe('CLI Parser Tests', () => {
 			).toThrowErrorMatchingInlineSnapshot(`
 			  "--no-mode cannot be negated
 
-			    \x1B[2mThe --no- prefix only works with boolean flags that default to true\x1B[22m"
+			    \x1B[2mThe --no- prefix only works with boolean flags\x1B[22m"
 			`)
 		})
 
@@ -2420,6 +2406,210 @@ describe('CLI Parser Tests', () => {
 				  \x1B[2m  Received: \x1B[22m\x1B[31m--complex.value "ab" \x1B[2m(2 chars)\x1B[22m\x1B[39m
 				  \x1B[2m  Expected: \x1B[22m\x1B[32m--complex.value "abx" \x1B[2m(3 chars)\x1B[22m\x1B[39m"
 				`,
+			)
+		})
+	})
+
+	describe('--no- flag support for ALL boolean types', () => {
+		test('should handle --no- for boolean with default false', () => {
+			const program = cli().option('verbose', z.boolean().default(false))
+			const result = program.parse(['--no-verbose'])
+			expect(result?.options.verbose).toBe(false)
+		})
+
+		test('should handle --no- for boolean with default true', () => {
+			const program = cli().option('cache', z.boolean().default(true))
+			const result = program.parse(['--no-cache'])
+			expect(result?.options.cache).toBe(false)
+		})
+
+		test('should handle --no- for boolean without default', () => {
+			const program = cli().option('debug', z.boolean())
+			const result = program.parse(['--no-debug'])
+			expect(result?.options.debug).toBe(false)
+		})
+
+		test('should handle --no- for boolean in union', () => {
+			const program = cli().option('output', z.union(z.boolean(), z.string()))
+			const result = program.parse(['--no-output'])
+			expect(result?.options.output).toBe(false)
+		})
+
+		test('should handle --no- for nested boolean in object', () => {
+			const program = cli().option(
+				'build',
+				z.object({
+					minify: z.boolean().default(true),
+					sourcemap: z.boolean().default(false),
+				}),
+			)
+			const result = program.parse([
+				'--no-build.minify',
+				'--no-build.sourcemap',
+			])
+			expect(result?.options.build).toEqual({
+				minify: false,
+				sourcemap: false,
+			})
+		})
+
+		test('should reject --no- for non-boolean types', () => {
+			const program = cli().option('name', z.string())
+			expect(() => program.parse(['--no-name'])).toThrow(/cannot be negated/)
+		})
+	})
+
+	describe('Dot notation with quoted strings', () => {
+		test('should parse dot notation with single quotes', () => {
+			const program = cli().option('loader', z.object(z.string()))
+			const result = program.parse([
+				"--loader.'.png'=dataurl",
+				"--loader.'.txt'=file",
+			])
+			expect(result?.options.loader).toEqual({
+				'.png': 'dataurl',
+				'.txt': 'file',
+			})
+		})
+
+		test('should parse dot notation with double quotes', () => {
+			const program = cli().option('loader', z.object(z.string()))
+			const result = program.parse([
+				'--loader.".png"=dataurl',
+				'--loader.".txt"=file',
+			])
+			expect(result?.options.loader).toEqual({
+				'.png': 'dataurl',
+				'.txt': 'file',
+			})
+		})
+
+		test('should parse dot notation without quotes', () => {
+			const program = cli().option('loader', z.object(z.string()))
+			const result = program.parse([
+				'--loader.png=dataurl',
+				'--loader.txt=file',
+			])
+			expect(result?.options.loader).toEqual({
+				png: 'dataurl',
+				txt: 'file',
+			})
+		})
+
+		test('should handle mixed quoted and unquoted keys', () => {
+			const program = cli().option('config', z.object(z.string()))
+			const result = program.parse([
+				'--config.normal=value1',
+				"--config.'special.key'=value2",
+				'--config."another.key"=value3',
+			])
+			expect(result?.options.config).toEqual({
+				normal: 'value1',
+				'special.key': 'value2',
+				'another.key': 'value3',
+			})
+		})
+
+		test('should handle quoted values with equals syntax', () => {
+			const program = cli().option('env', z.object(z.string()))
+			const result = program.parse([
+				"--env.KEY1='quoted value'",
+				'--env.KEY2="another quoted"',
+				'--env.KEY3=unquoted',
+			])
+			expect(result?.options.env).toEqual({
+				KEY1: 'quoted value',
+				KEY2: 'another quoted',
+				KEY3: 'unquoted',
+			})
+		})
+
+		test('should handle special characters in quoted keys', () => {
+			const program = cli().option('map', z.object(z.string()))
+			const result = program.parse([
+				"--map.'*.js'=transpile",
+				'--map."[test]"=skip',
+				"--map.'a b c'=spaces",
+				'--map."@namespace/package"=scoped',
+			])
+			expect(result?.options.map).toEqual({
+				'*.js': 'transpile',
+				'[test]': 'skip',
+				'a b c': 'spaces',
+				'@namespace/package': 'scoped',
+			})
+		})
+	})
+
+	describe('Integration tests', () => {
+		test('should handle all new features together', () => {
+			const program = cli()
+				.option('verbose', z.boolean())
+				.option('cache', z.boolean().default(true))
+				.option(
+					'loader',
+					z.object(z.string().choices(['file', 'dataurl', 'text'])),
+				)
+				.option(
+					'build',
+					z.object({
+						minify: z.union(
+							z.boolean(),
+							z.object({
+								js: z.boolean(),
+								css: z.boolean(),
+							}),
+						),
+						output: z.string(),
+					}),
+				)
+
+			const result = program.parse([
+				'--no-verbose',
+				'--no-cache',
+				"--loader.'.png'=dataurl",
+				"--loader.'.txt'=text",
+				'--loader.js=file',
+				'--no-build.minify.js',
+				'--build.minify.css',
+				'--build.output=dist',
+			])
+
+			expect(result?.options).toMatchObject({
+				verbose: false,
+				cache: false,
+				loader: {
+					'.png': 'dataurl',
+					'.txt': 'text',
+					js: 'file',
+				},
+				build: {
+					minify: {
+						js: false,
+						css: true,
+					},
+					output: 'dist',
+				},
+			})
+		})
+
+		test('should validate quoted key values properly', () => {
+			const program = cli().option(
+				'modes',
+				z.object(z.string().choices(['on', 'off'])),
+			)
+
+			const result = program.parse([
+				"--modes.'feature.1'=on",
+				'--modes."feature.2"=off',
+			])
+			expect(result?.options.modes).toEqual({
+				'feature.1': 'on',
+				'feature.2': 'off',
+			})
+
+			expect(() => program.parse(["--modes.'feature.3'=invalid"])).toThrow(
+				/must be one of/,
 			)
 		})
 	})
