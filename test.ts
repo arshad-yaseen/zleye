@@ -338,23 +338,28 @@ const program = cli()
 	)
 
 	.option(
-		'onSuccess',
+		'on-success',
 		z.string().describe('Command to run after successful build').optional(),
 	)
 
 	.option(
-		'css',
-		z.object({
-			typedModules: z
-				.boolean()
-				.describe('Generate TypeScript definitions for CSS modules')
-				.default(true),
-		}),
+		'css-hello',
+		z
+			.object({
+				'typed-modules': z.object({
+					'ano-vava-s': z.number(),
+				}),
+				'cool-module': z
+					.boolean()
+					.describe('Generate TypeScript definitions for CSS modules')
+					.default(true),
+			})
+			.optional(),
 	)
 
 	.rest('entries', z.string().describe('Entry point files to bundle'))
 
 console.time('time')
 const result = program.parse()
-console.log(result)
+console.log(result?.options.cssHello)
 console.timeEnd('time')

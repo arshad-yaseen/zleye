@@ -1786,7 +1786,7 @@ describe('CLI Parser Tests', () => {
 		test('should handle option names with hyphens', () => {
 			const program = cli().option('dry-run', z.boolean())
 			const result = program.parse(['--dry-run'])
-			expect(result?.options['dry-run']).toBe(true)
+			expect(result?.options.dryRun).toBe(true)
 		})
 
 		test('should handle equals sign in string value', () => {
@@ -2753,6 +2753,418 @@ describe('CLI Parser Tests', () => {
 
 			const result2 = program.parse([])
 			expect(result2?.options).toMatchObject({})
+		})
+	})
+
+	describe('Camel Case Conversion', () => {
+		test('should convert hyphenated option names to camelCase', () => {
+			const program = cli()
+				.option('dry-run', z.boolean())
+				.option('output-dir', z.string())
+				.option('max-workers', z.number())
+
+			const result = program.parse([
+				'--dry-run',
+				'--output-dir',
+				'dist',
+				'--max-workers',
+				'4',
+			])
+
+			expect(result?.options).toMatchObject({
+				dryRun: true,
+				outputDir: 'dist',
+				maxWorkers: 4,
+			})
+		})
+
+		test('should convert hyphenated object property names to camelCase', () => {
+			const program = cli().option(
+				'build-config',
+				z.object({
+					'source-maps': z.boolean(),
+					'output-format': z.string(),
+					'target-env': z.string(),
+				}),
+			)
+
+			const result = program.parse([
+				'--build-config.source-maps',
+				'true',
+				'--build-config.output-format',
+				'esm',
+				'--build-config.target-env',
+				'node',
+			])
+
+			expect(result?.options).toMatchObject({
+				buildConfig: {
+					sourceMaps: true,
+					outputFormat: 'esm',
+					targetEnv: 'node',
+				},
+			})
+		})
+
+		test('should convert hyphenated keys in union object schemas to camelCase', () => {
+			const program = cli().option(
+				'deploy-config',
+				z.union(
+					z.object({
+						'deploy-type': z.string().choices(['static']),
+						'build-dir': z.string(),
+						'cache-control': z.string(),
+					}),
+					z.object({
+						'deploy-type': z.string().choices(['server']),
+						'server-port': z.number(),
+						'health-check': z.boolean(),
+					}),
+				),
+			)
+
+			const result = program.parse([
+				'--deploy-config.deploy-type',
+				'server',
+				'--deploy-config.server-port',
+				'3000',
+				'--deploy-config.health-check',
+				'true',
+			])
+
+			expect(result?.options).toMatchObject({
+				deployConfig: {
+					deployType: 'server',
+					serverPort: 3000,
+					healthCheck: true,
+				},
+			})
+		})
+
+		test('should NOT convert keys for dynamic objects with any keys', () => {
+			const program = cli()
+				.option('env-vars', z.object(z.string()))
+				.option('feature-flags', z.object(z.boolean()))
+
+			const result = program.parse([
+				'--env-vars.NODE_ENV',
+				'production',
+				'--env-vars.API-KEY',
+				'secret',
+				'--feature-flags.dark-mode',
+				'true',
+				'--feature-flags.beta-features',
+				'false',
+			])
+
+			expect(result?.options).toMatchObject({
+				envVars: {
+					NODE_ENV: 'production',
+					'API-KEY': 'secret',
+				},
+				featureFlags: {
+					'dark-mode': true,
+					'beta-features': false,
+				},
+			})
+		})
+
+		test('should handle mixed scenarios with both fixed and dynamic objects', () => {
+			const program = cli()
+				.option(
+					'build-settings',
+					z.object({
+						'source-maps': z.boolean(),
+						'output-dir': z.string(),
+					}),
+				)
+				.option('custom-loaders', z.object(z.string()))
+				.option('watch-mode', z.boolean())
+
+			const result = program.parse([
+				'--build-settings.source-maps',
+				'true',
+				'--build-settings.output-dir',
+				'dist',
+				'--custom-loaders.ts-loader',
+				'typescript',
+				'--custom-loaders.css-loader',
+				'postcss',
+				'--watch-mode',
+			])
+
+			expect(result?.options).toMatchObject({
+				buildSettings: {
+					sourceMaps: true,
+					outputDir: 'dist',
+				},
+				customLoaders: {
+					'ts-loader': 'typescript',
+					'css-loader': 'postcss',
+				},
+				watchMode: true,
+			})
+		})
+
+		test('should convert hyphenated property names to camelCase in deep nested objects', () => {
+			const program = cli().option(
+				'deep-config',
+				z.object({
+					'database-settings': z.object({
+						'connection-pool': z.object({
+							'min-connections': z.number(),
+							'max-connections': z.number(),
+							'connection-timeout': z.number(),
+							'idle-timeout': z.number(),
+						}),
+						'retry-config': z.object({
+							'max-retries': z.number(),
+							'retry-delay': z.number(),
+							'exponential-backoff': z.boolean(),
+						}),
+					}),
+					'server-options': z.object({
+						'http-config': z.object({
+							'keep-alive': z.boolean(),
+							'request-timeout': z.number(),
+							'body-parser': z.object({
+								'json-limit': z.string(),
+								'url-encoded-limit': z.string(),
+								'parse-arrays': z.boolean(),
+							}),
+						}),
+					}),
+				}),
+			)
+
+			const result = program.parse([
+				'--deep-config.database-settings.connection-pool.min-connections',
+				'5',
+				'--deep-config.database-settings.connection-pool.max-connections',
+				'20',
+				'--deep-config.database-settings.connection-pool.connection-timeout',
+				'5000',
+				'--deep-config.database-settings.connection-pool.idle-timeout',
+				'30000',
+				'--deep-config.database-settings.retry-config.max-retries',
+				'3',
+				'--deep-config.database-settings.retry-config.retry-delay',
+				'1000',
+				'--deep-config.database-settings.retry-config.exponential-backoff',
+				'true',
+				'--deep-config.server-options.http-config.keep-alive',
+				'true',
+				'--deep-config.server-options.http-config.request-timeout',
+				'10000',
+				'--deep-config.server-options.http-config.body-parser.json-limit',
+				'10mb',
+				'--deep-config.server-options.http-config.body-parser.url-encoded-limit',
+				'10mb',
+				'--deep-config.server-options.http-config.body-parser.parse-arrays',
+				'false',
+			])
+
+			expect(result?.options).toMatchObject({
+				deepConfig: {
+					databaseSettings: {
+						connectionPool: {
+							minConnections: 5,
+							maxConnections: 20,
+							connectionTimeout: 5000,
+							idleTimeout: 30000,
+						},
+						retryConfig: {
+							maxRetries: 3,
+							retryDelay: 1000,
+							exponentialBackoff: true,
+						},
+					},
+					serverOptions: {
+						httpConfig: {
+							keepAlive: true,
+							requestTimeout: 10000,
+							bodyParser: {
+								jsonLimit: '10mb',
+								urlEncodedLimit: '10mb',
+								parseArrays: false,
+							},
+						},
+					},
+				},
+			})
+		})
+
+		test('should convert hyphenated property names to camelCase in deep nested objects within unions', () => {
+			const program = cli().option(
+				'deployment-strategy',
+				z.union(
+					z.object({
+						'strategy-type': z.string().choices(['blue-green']),
+						'blue-green-config': z.object({
+							'health-checks': z.object({
+								'initial-delay': z.number(),
+								'check-interval': z.number(),
+								'failure-threshold': z.number(),
+								'success-threshold': z.number(),
+							}),
+							'traffic-routing': z.object({
+								'switch-delay': z.number(),
+								'rollback-threshold': z.number(),
+								'monitoring-period': z.number(),
+							}),
+						}),
+					}),
+					z.object({
+						'strategy-type': z.string().choices(['canary']),
+						'canary-config': z.object({
+							'traffic-split': z.object({
+								'initial-percentage': z.number(),
+								'increment-step': z.number(),
+								'promotion-interval': z.number(),
+								'max-traffic-percentage': z.number(),
+							}),
+							'success-metrics': z.object({
+								'error-rate-threshold': z.number(),
+								'response-time-threshold': z.number(),
+								'success-rate-minimum': z.number(),
+							}),
+						}),
+					}),
+					z.object({
+						'strategy-type': z.string().choices(['rolling']),
+						'rolling-config': z.object({
+							'batch-settings': z.object({
+								'batch-size': z.number(),
+								'batch-interval': z.number(),
+								'max-unavailable': z.number(),
+								'max-surge': z.number(),
+							}),
+							'health-monitoring': z.object({
+								'readiness-probe': z.boolean(),
+								'liveness-probe': z.boolean(),
+								'startup-probe-delay': z.number(),
+							}),
+						}),
+					}),
+				),
+			)
+
+			// Test blue-green strategy
+			let result = program.parse([
+				'--deployment-strategy.strategy-type',
+				'blue-green',
+				'--deployment-strategy.blue-green-config.health-checks.initial-delay',
+				'30',
+				'--deployment-strategy.blue-green-config.health-checks.check-interval',
+				'10',
+				'--deployment-strategy.blue-green-config.health-checks.failure-threshold',
+				'3',
+				'--deployment-strategy.blue-green-config.health-checks.success-threshold',
+				'1',
+				'--deployment-strategy.blue-green-config.traffic-routing.switch-delay',
+				'60',
+				'--deployment-strategy.blue-green-config.traffic-routing.rollback-threshold',
+				'5',
+				'--deployment-strategy.blue-green-config.traffic-routing.monitoring-period',
+				'300',
+			])
+
+			expect(result?.options).toMatchObject({
+				deploymentStrategy: {
+					strategyType: 'blue-green',
+					blueGreenConfig: {
+						healthChecks: {
+							initialDelay: 30,
+							checkInterval: 10,
+							failureThreshold: 3,
+							successThreshold: 1,
+						},
+						trafficRouting: {
+							switchDelay: 60,
+							rollbackThreshold: 5,
+							monitoringPeriod: 300,
+						},
+					},
+				},
+			})
+
+			// Test canary strategy
+			result = program.parse([
+				'--deployment-strategy.strategy-type',
+				'canary',
+				'--deployment-strategy.canary-config.traffic-split.initial-percentage',
+				'5',
+				'--deployment-strategy.canary-config.traffic-split.increment-step',
+				'10',
+				'--deployment-strategy.canary-config.traffic-split.promotion-interval',
+				'300',
+				'--deployment-strategy.canary-config.traffic-split.max-traffic-percentage',
+				'100',
+				'--deployment-strategy.canary-config.success-metrics.error-rate-threshold',
+				'1',
+				'--deployment-strategy.canary-config.success-metrics.response-time-threshold',
+				'200',
+				'--deployment-strategy.canary-config.success-metrics.success-rate-minimum',
+				'99',
+			])
+
+			expect(result?.options).toMatchObject({
+				deploymentStrategy: {
+					strategyType: 'canary',
+					canaryConfig: {
+						trafficSplit: {
+							initialPercentage: 5,
+							incrementStep: 10,
+							promotionInterval: 300,
+							maxTrafficPercentage: 100,
+						},
+						successMetrics: {
+							errorRateThreshold: 1,
+							responseTimeThreshold: 200,
+							successRateMinimum: 99,
+						},
+					},
+				},
+			})
+
+			// Test rolling strategy
+			result = program.parse([
+				'--deployment-strategy.strategy-type',
+				'rolling',
+				'--deployment-strategy.rolling-config.batch-settings.batch-size',
+				'2',
+				'--deployment-strategy.rolling-config.batch-settings.batch-interval',
+				'30',
+				'--deployment-strategy.rolling-config.batch-settings.max-unavailable',
+				'1',
+				'--deployment-strategy.rolling-config.batch-settings.max-surge',
+				'1',
+				'--deployment-strategy.rolling-config.health-monitoring.readiness-probe',
+				'true',
+				'--deployment-strategy.rolling-config.health-monitoring.liveness-probe',
+				'true',
+				'--deployment-strategy.rolling-config.health-monitoring.startup-probe-delay',
+				'10',
+			])
+
+			expect(result?.options).toMatchObject({
+				deploymentStrategy: {
+					strategyType: 'rolling',
+					rollingConfig: {
+						batchSettings: {
+							batchSize: 2,
+							batchInterval: 30,
+							maxUnavailable: 1,
+							maxSurge: 1,
+						},
+						healthMonitoring: {
+							readinessProbe: true,
+							livenessProbe: true,
+							startupProbeDelay: 10,
+						},
+					},
+				},
+			})
 		})
 	})
 })

@@ -1,8 +1,22 @@
 import pc from 'picocolors'
 
-import { joinWithAnd, joinWithOr, processExit } from './utils'
+import { joinWithAnd, processExit } from './utils'
 
 type Prettify<T> = { [K in keyof T]: T[K] } & {}
+
+type HyphenToCamelCase<S extends string> = S extends `${infer P1}-${infer P2}`
+	? `${Lowercase<P1>}${Capitalize<HyphenToCamelCase<P2>>}`
+	: S
+
+type CamelCaseKeys<T> = T extends any
+	? T extends (infer U)[]
+		? CamelCaseKeys<U>[]
+		: T extends Record<string, any>
+			? {
+					[K in keyof T as HyphenToCamelCase<K & string>]: CamelCaseKeys<T[K]>
+				}
+			: T
+	: never
 
 type ExtractPositionalType<T> = T extends PositionalSchema<infer U> ? U : never
 
@@ -30,33 +44,31 @@ type SchemaType = 'string' | 'number' | 'boolean' | 'array' | 'object' | 'union'
 
 type UnionToTuple<T> = T extends Schema<infer U>[] ? U : never
 
+function hyphenToCamelCase(str: string): string {
+	if (str.includes('--') || str.startsWith('-') || str.endsWith('-')) {
+		return str
+	}
+	return str.replace(/-([a-z])/g, (_, char) => char.toUpperCase())
+}
+
+function camelCaseToHyphen(str: string): string {
+	return str.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`)
+}
+
+function convertKeysToCamelCase(obj: Record<string, any>): Record<string, any> {
+	const result: Record<string, any> = {}
+	for (const [key, value] of Object.entries(obj)) {
+		const camelKey = hyphenToCamelCase(key)
+		if (value && typeof value === 'object' && !Array.isArray(value)) {
+			result[camelKey] = convertKeysToCamelCase(value)
+		} else {
+			result[camelKey] = value
+		}
+	}
+	return result
+}
+
 interface ParseOptions {
-	/**
-	 * When set to `true`, default values defined with `.default()` will not be included
-	 * in the parsed result. Only explicitly provided values will be returned.
-	 * Default values will still be shown in the help output.
-	 *
-	 * This is useful when you need to distinguish between user-provided values and defaults,
-	 * for example when merging CLI arguments with configuration files or environment variables.
-	 *
-	 * @default false
-	 *
-	 * @example
-	 * ```typescript
-	 * const program = cli()
-	 *   .option('port', z.number().default(3000))
-	 *   .option('host', z.string().default('localhost'))
-	 *   .with({ ignoreOptionDefaultValue: true })
-	 *
-	 * // When parsing with no arguments
-	 * const result = program.parse([])
-	 * // result.options will be {} instead of { port: 3000, host: 'localhost' }
-	 *
-	 * // When providing explicit values
-	 * const result = program.parse(['--port', '8080'])
-	 * // result.options will be { port: 8080 }
-	 * ```
-	 */
 	ignoreOptionDefaultValue?: boolean
 }
 
@@ -162,7 +174,9 @@ interface Command<
 	options: TOptions
 	positionals?: (PositionalSchema<any> | VariadicPositionalSchema<any>)[]
 	action: (args: {
-		options: Prettify<{ [K in keyof TOptions]: TOptions[K]['_output'] }>
+		options: Prettify<
+			CamelCaseKeys<{ [K in keyof TOptions]: TOptions[K]['_output'] }>
+		>
 		positionals: ExtractNonRestPositionals<TPositionals>
 		rest: ExtractRestType<TPositionals>
 	}) => void | Promise<void>
@@ -188,7 +202,9 @@ interface CommandBuilder<
 	): CommandBuilder<TOptions, [...TPositionals, VariadicPositionalSchema<T>]>
 	action(
 		fn: (args: {
-			options: Prettify<{ [K in keyof TOptions]: TOptions[K]['_output'] }>
+			options: Prettify<
+				CamelCaseKeys<{ [K in keyof TOptions]: TOptions[K]['_output'] }>
+			>
 			positionals: ExtractNonRestPositionals<TPositionals>
 			rest: ExtractRestType<TPositionals>
 		}) => void | Promise<void>,
@@ -226,7 +242,9 @@ interface CLI<
 	with(options: ParseOptions): this
 	parse(argv?: string[]):
 		| {
-				options: Prettify<{ [K in keyof TOptions]: TOptions[K]['_output'] }>
+				options: Prettify<
+					CamelCaseKeys<{ [K in keyof TOptions]: TOptions[K]['_output'] }>
+				>
 				positionals: ExtractNonRestPositionals<TPositionals>
 				rest: ExtractRestType<TPositionals>
 		  }
@@ -316,8 +334,11 @@ class ErrorFormatter {
 				const keys = Object.keys(obj._shape)
 				if (keys.length) {
 					const key = keys[0]
+					const displayKey = (obj as any).getOriginalKey
+						? (obj as any).getOriginalKey(key)
+						: key
 					return pc.green(
-						`${prefix}${flagName}.${key} ${this.getExampleValue(obj._shape[key])}`,
+						`${prefix}${flagName}.${displayKey} ${this.getExampleValue(obj._shape[key])}`,
 					)
 				}
 			}
@@ -792,6 +813,7 @@ class ObjectSchemaImpl<T extends Record<string, any> = Record<string, any>>
 	_shape?: { [K in keyof T]: Schema<T[K]> }
 	_isAnyKeys?: boolean
 	_valueSchema?: Schema<any>
+	_originalShape?: { [K in keyof T]: Schema<T[K]> }
 
 	constructor(
 		shapeOrValueSchema?: { [K in keyof T]: Schema<T[K]> } | Schema<any>,
@@ -811,9 +833,39 @@ class ObjectSchemaImpl<T extends Record<string, any> = Record<string, any>>
 			this._isAnyKeys = true
 			this._valueSchema = shapeOrValueSchema as Schema<any>
 		} else {
-			this._shape = shapeOrValueSchema as { [K in keyof T]: Schema<T[K]> }
+			this._originalShape = shapeOrValueSchema as {
+				[K in keyof T]: Schema<T[K]>
+			}
+			const convertedShape: any = {}
+			for (const [key, value] of Object.entries(shapeOrValueSchema as any)) {
+				const camelKey = hyphenToCamelCase(key)
+				convertedShape[camelKey] = value
+			}
+			this._shape = convertedShape as { [K in keyof T]: Schema<T[K]> }
 			this._isAnyKeys = false
 		}
+	}
+
+	// Helper method to get original key from camelCase key
+	public getOriginalKey(camelKey: string): string {
+		if (!this._originalShape) return camelKey
+		for (const [originalKey, _] of Object.entries(this._originalShape)) {
+			if (hyphenToCamelCase(originalKey) === camelKey) {
+				return originalKey
+			}
+		}
+		return camelKey
+	}
+
+	// Helper method to get camelCase key from original key
+	private getCamelKey(originalKey: string): string {
+		return hyphenToCamelCase(originalKey)
+	}
+
+	// Helper method to get all original keys
+	private getOriginalKeys(): string[] {
+		if (!this._originalShape) return []
+		return Object.keys(this._originalShape)
 	}
 
 	protected validateValue(value: unknown, path: string): T {
@@ -821,11 +873,12 @@ class ObjectSchemaImpl<T extends Record<string, any> = Record<string, any>>
 			const flagName = path.replace('--', '')
 			let correctUsage = ''
 
-			if (this._shape) {
-				const keys = Object.keys(this._shape)
+			if (this._originalShape || this._shape) {
+				const shape = this._originalShape || this._shape
+				const keys = Object.keys(shape || {})
 				if (keys.length) {
 					const key = keys[0]
-					const example = ErrorFormatter.getExampleValue(this._shape[key])
+					const example = ErrorFormatter.getExampleValue(shape![key])
 					correctUsage = `--${flagName}.${key} ${example}`
 				}
 			} else if (this._isAnyKeys) {
@@ -845,6 +898,7 @@ class ObjectSchemaImpl<T extends Record<string, any> = Record<string, any>>
 		if (this._isAnyKeys && this._valueSchema) {
 			const result: any = {}
 			for (const [key, val] of Object.entries(objectValue)) {
+				// For dynamic objects with any keys, preserve the original key names
 				result[key] = this._valueSchema.parse(val, `${path}.${key}`)
 			}
 			return result as T
@@ -859,6 +913,7 @@ class ObjectSchemaImpl<T extends Record<string, any> = Record<string, any>>
 
 			if (unknownKeys.length) {
 				const validKeys = Array.from(shapeKeys)
+				const originalValidKeys = validKeys.map((k) => this.getOriginalKey(k))
 				const suggestions = unknownKeys.map((uk) => {
 					const similar = validKeys.find(
 						(vk) =>
@@ -866,16 +921,20 @@ class ObjectSchemaImpl<T extends Record<string, any> = Record<string, any>>
 							vk.toLowerCase().includes(uk.toLowerCase()) ||
 							uk.toLowerCase().includes(vk.toLowerCase()),
 					)
-					return similar ? `${pc.red(uk)} → ${pc.green(similar)}` : pc.red(uk)
+					const originalSimilar = similar ? this.getOriginalKey(similar) : null
+					return originalSimilar
+						? `${pc.red(uk)} → ${pc.green(originalSimilar)}`
+						: pc.red(uk)
 				})
 				const flagName = path.replace('--', '')
 				throw new CLIError(
-					`${path} received unexpected properties\n\n  ${pc.red('Invalid:')} ${suggestions.join(', ')}\n  ${pc.green('Valid:')} ${validKeys.map((k) => pc.cyan(k)).join(', ')}\n\n${pc.dim('Available properties:\n')}${validKeys.map((k) => `  ${pc.cyan(`--${flagName}.${k}`)}`).join('\n')}`,
+					`${path} received unexpected properties\n\n  ${pc.red('Invalid:')} ${suggestions.join(', ')}\n  ${pc.green('Valid:')} ${originalValidKeys.map((k) => pc.cyan(k)).join(', ')}\n\n${pc.dim('Available properties:\n')}${originalValidKeys.map((k) => `  ${pc.cyan(`--${flagName}.${k}`)}`).join('\n')}`,
 				)
 			}
 
 			for (const [key, schema] of Object.entries(this._shape)) {
-				result[key] = schema.parse(objectValue[key], `${path}.${key}`)
+				const originalKey = this.getOriginalKey(key)
+				result[key] = schema.parse(objectValue[key], `${path}.${originalKey}`)
 			}
 			return result as T
 		}
@@ -950,9 +1009,14 @@ class UnionSchemaImpl<T extends readonly Schema[]>
 							)
 							if (invalidKeys.length && validKeys.length === 0) {
 								const allValidKeys = Object.keys(objSchema._shape)
+								const originalValidKeys = allValidKeys.map((k) =>
+									objSchema instanceof ObjectSchemaImpl
+										? objSchema.getOriginalKey(k)
+										: k,
+								)
 								const flagName = path.replace('--', '')
 								throw new CLIError(
-									`${path} has invalid properties: ${pc.red('{' + invalidKeys.join(', ') + '}')}\n\n${pc.dim('Available properties for object format:')}\n${allValidKeys.map((k) => `  ${pc.green(`--${flagName}.${k}`)} <value>`).join('\n')}\n\n${pc.dim('Or use other formats:')}\n  ${pc.green(`--${flagName}`)} ${pc.dim('(boolean)')}\n  ${pc.green(`--${flagName} value`)} ${pc.dim('(simple value)')}`,
+									`${path} has invalid properties: ${pc.red('{' + invalidKeys.join(', ') + '}')}\n\n${pc.dim('Available properties for object format:')}\n${originalValidKeys.map((k) => `  ${pc.green(`--${flagName}.${k}`)} <value>`).join('\n')}\n\n${pc.dim('Or use other formats:')}\n  ${pc.green(`--${flagName}`)} ${pc.dim('(boolean)')}\n  ${pc.green(`--${flagName} value`)} ${pc.dim('(simple value)')}`,
 								)
 							}
 						}
@@ -1147,7 +1211,9 @@ class CommandBuilderImpl<
 
 	action(
 		fn: (args: {
-			options: Prettify<{ [K in keyof TOptions]: TOptions[K]['_output'] }>
+			options: Prettify<
+				CamelCaseKeys<{ [K in keyof TOptions]: TOptions[K]['_output'] }>
+			>
 			positionals: ExtractNonRestPositionals<TPositionals>
 			rest: ExtractRestType<TPositionals>
 		}) => void | Promise<void>,
@@ -1371,12 +1437,11 @@ class HelpFormatter {
 				// @ts-expect-error
 				!schema._isAnyKeys &&
 				// @ts-expect-error
-				schema._shape
+				(schema._originalShape || schema._shape)
 			) {
-				rows.push(
-					// @ts-expect-error
-					...this.buildOptionRows(schema._shape, fullKey, addedNoVersions),
-				)
+				// @ts-expect-error
+				const shape = schema._originalShape || schema._shape
+				rows.push(...this.buildOptionRows(shape, fullKey, addedNoVersions))
 			} else {
 				rows.push({
 					flags: this.getOptionFlags(fullKey, schema),
@@ -1384,7 +1449,6 @@ class HelpFormatter {
 					desc: this.getOptionDescription(schema),
 				})
 
-				// Add --no- version for ALL boolean flags
 				if (schema._type === 'boolean' && !addedNoVersions.has(fullKey)) {
 					addedNoVersions.add(fullKey)
 					rows.push({
@@ -1431,7 +1495,10 @@ class HelpFormatter {
 					desc: this.getOptionDescription(objSchema),
 				})
 			} else {
-				const objShape = (objSchema as ObjectSchema<any>)._shape!
+				const objShape =
+					// @ts-expect-error
+					(objSchema as ObjectSchema<any>)._originalShape ||
+					(objSchema as ObjectSchema<any>)._shape!
 				rows.push(...this.buildOptionRows(objShape, key, addedNoVersions))
 			}
 		}
@@ -1447,7 +1514,6 @@ class HelpFormatter {
 			}
 		}
 
-		// Add --no- version for boolean types in union
 		const hasBooleanSchema = schema._schemas.some(
 			(s: any) => s._type === 'boolean',
 		)
@@ -1598,6 +1664,15 @@ class ArgumentParser {
 		const doubleDashIndex = args.indexOf('--')
 		let rawArgs: string[] = []
 
+		const camelCaseOptions: Record<string, Schema> = {}
+		const keyMapping = new Map<string, string>()
+
+		for (const [key, schema] of Object.entries(options)) {
+			const camelKey = hyphenToCamelCase(key)
+			camelCaseOptions[camelKey] = schema
+			keyMapping.set(key, camelKey)
+		}
+
 		this.flagUsage.clear()
 		this.flagValues.clear()
 
@@ -1606,15 +1681,28 @@ class ArgumentParser {
 			args = args.slice(0, doubleDashIndex)
 		}
 
-		const flagOccurrences = this.collectFlagOccurrences(args, options)
-		this.detectAndReportConflicts(flagOccurrences, options)
+		const flagOccurrences = this.collectFlagOccurrences(
+			args,
+			options,
+			camelCaseOptions,
+			keyMapping,
+		)
+		this.detectAndReportConflicts(flagOccurrences, camelCaseOptions)
 
 		for (let i = 0; i < args.length; i++) {
 			const arg = args[i]
 			if (arg.startsWith('--')) {
-				i += this.parseFlag(arg, args, i, options, rawOptions)
+				i += this.parseFlag(
+					arg,
+					args,
+					i,
+					options,
+					camelCaseOptions,
+					rawOptions,
+					keyMapping,
+				)
 			} else if (arg.startsWith('-') && !this.looksLikeNegativeNumber(arg)) {
-				i += this.parseAlias(arg, args, i, options, rawOptions)
+				i += this.parseAlias(arg, args, i, camelCaseOptions, rawOptions)
 			} else {
 				positionalArgs.push(arg)
 			}
@@ -1622,13 +1710,23 @@ class ArgumentParser {
 
 		positionalArgs.push(...rawArgs)
 
-		for (const [key, schema] of Object.entries(options)) {
+		for (const [key, schema] of Object.entries(camelCaseOptions)) {
+			// Find the original hyphenated key for error messages
+			const originalKey =
+				Array.from(keyMapping.entries()).find(
+					([_, camelKey]) => camelKey === key,
+				)?.[0] || key
 			const value =
 				rawOptions[key] !== undefined
-					? this.parseOptionWithSchema(key, schema, rawOptions[key], options)
+					? this.parseOptionWithSchema(
+							originalKey,
+							schema,
+							rawOptions[key],
+							camelCaseOptions,
+						)
 					: parseOptions?.ignoreOptionDefaultValue
 						? undefined
-						: schema.parse(undefined, `--${key}`)
+						: schema.parse(undefined, `--${originalKey}`)
 
 			if (value !== undefined) {
 				parsed[key] = value
@@ -1641,6 +1739,8 @@ class ArgumentParser {
 	private collectFlagOccurrences(
 		args: string[],
 		options: Record<string, Schema>,
+		camelCaseOptions: Record<string, Schema>,
+		keyMapping: Map<string, string>,
 	): Map<string, string[]> {
 		const occurrences = new Map<string, string[]>()
 
@@ -1648,10 +1748,13 @@ class ArgumentParser {
 			if (arg.startsWith('--') && !arg.startsWith('--no-')) {
 				const [keyPath] = arg.slice(2).split('=')
 				const mainKey = this.parseDotPath(keyPath)[0]
+				const camelKey = hyphenToCamelCase(mainKey)
 
-				if (options[mainKey]) {
-					if (!occurrences.has(mainKey)) occurrences.set(mainKey, [])
-					occurrences.get(mainKey)!.push(arg)
+				if (options[mainKey] || camelCaseOptions[camelKey]) {
+					const normalizedKey = keyMapping.get(mainKey) || camelKey
+					if (!occurrences.has(normalizedKey))
+						occurrences.set(normalizedKey, [])
+					occurrences.get(normalizedKey)!.push(arg)
 				}
 			}
 		}
@@ -1694,7 +1797,6 @@ class ArgumentParser {
 		return arg.startsWith('-') && /^\d/.test(arg.slice(1))
 	}
 
-	// Parse dot paths with support for quoted keys
 	private parseDotPath(path: string): string[] {
 		const keys: string[] = []
 		let current = ''
@@ -1743,9 +1845,7 @@ class ArgumentParser {
 		return keys
 	}
 
-	// Parse value with support for quoted strings
 	private parseValue(value: string): string {
-		// Remove surrounding quotes if present
 		if (
 			(value.startsWith('"') && value.endsWith('"')) ||
 			(value.startsWith("'") && value.endsWith("'"))
@@ -1841,6 +1941,7 @@ class ArgumentParser {
 		if (schema._isAnyKeys && schema._valueSchema) {
 			const result: any = {}
 			for (const [k, v] of Object.entries(rawValue)) {
+				// For dynamic objects with any keys, preserve the original key names
 				result[k] = schema._valueSchema.parse(v, `${path}.${k}`)
 			}
 			return result
@@ -1851,24 +1952,30 @@ class ArgumentParser {
 			const allOptions: string[] = []
 
 			for (const [k, v] of Object.entries(rawValue)) {
-				if (!schema._shape[k]) {
+				const camelKey = hyphenToCamelCase(k)
+				if (!schema._shape[camelKey]) {
 					const validKeys = Object.keys(schema._shape)
-					for (let i = 0; i < validKeys.length; i++) {
-						const vk = validKeys[i]
+					const originalValidKeys = validKeys.map((vk) =>
+						schema instanceof ObjectSchemaImpl ? schema.getOriginalKey(vk) : vk,
+					)
+					for (let i = 0; i < originalValidKeys.length; i++) {
+						const vk = originalValidKeys[i]
 						allOptions.push(`--${path.slice(2)}.${vk}`)
 					}
 
-					const suggestion = this.findSimilarKey(k, validKeys)
+					const suggestion = this.findSimilarKey(k, originalValidKeys)
 					throw new CLIError(
-						`${path}.${k} is not recognized\n\n  ${pc.dim('Available properties:')}\n${validKeys.map((vk) => `    ${pc.green(`--${path.slice(2)}.${vk}`)}`).join('\n')}${suggestion ? `\n\n  ${pc.dim('Did you mean')} ${pc.green(`--${path.slice(2)}.${suggestion}`)}${pc.dim('?')}` : ''}`,
+						`${path}.${k} is not recognized\n\n  ${pc.dim('Available properties:')}\n${originalValidKeys.map((vk) => `    ${pc.green(`--${path.slice(2)}.${vk}`)}`).join('\n')}${suggestion ? `\n\n  ${pc.dim('Did you mean')} ${pc.green(`--${path.slice(2)}.${suggestion}`)}${pc.dim('?')}` : ''}`,
 					)
 				}
-				result[k] = schema._shape[k].parse(v, `${path}.${k}`)
+				result[camelKey] = schema._shape[camelKey].parse(v, `${path}.${k}`)
 			}
 
 			for (const [k, fieldSchema] of Object.entries(schema._shape)) {
 				if (!(k in result)) {
-					result[k] = fieldSchema.parse(undefined, `${path}.${k}`)
+					const originalKey =
+						schema instanceof ObjectSchemaImpl ? schema.getOriginalKey(k) : k
+					result[k] = fieldSchema.parse(undefined, `${path}.${originalKey}`)
 				}
 			}
 
@@ -1893,16 +2000,23 @@ class ArgumentParser {
 		args: string[],
 		index: number,
 		options: Record<string, Schema>,
+		camelCaseOptions: Record<string, Schema>,
 		rawOptions: Record<string, any>,
+		keyMapping: Map<string, string>,
 	): number {
 		if (arg.startsWith('--no-')) {
 			const keyPath = arg.slice(5).split('=')[0]
 			const keys = this.parseDotPath(keyPath)
 			const mainKey = keys[0]
-			const mainSchema = options[mainKey]
+			const camelMainKey = hyphenToCamelCase(mainKey)
+			const mainSchema = options[mainKey] || camelCaseOptions[camelMainKey]
 
 			if (!mainSchema) {
-				const suggestion = this.findSimilarKey(mainKey, Object.keys(options))
+				const allKeys = [
+					...Object.keys(options),
+					...Object.keys(camelCaseOptions),
+				]
+				const suggestion = this.findSimilarKey(mainKey, allKeys)
 				const availableOptions: string[] = []
 				for (const [k, s] of Object.entries(options)) {
 					availableOptions.push(`--${k}`)
@@ -1915,16 +2029,24 @@ class ArgumentParser {
 			}
 
 			if (keys.length > 1) {
-				// Handle nested boolean flags
-				const nestedSchema = this.getNestedSchema(mainSchema, keys.slice(1))
+				const nestedKeys = keys.slice(1)
+				const nestedSchema = this.getNestedSchema(mainSchema, nestedKeys)
 				if (nestedSchema && this.isBooleanSchema(nestedSchema)) {
-					this.setNestedValue(rawOptions, keyPath, false, options)
+					const camelKeys = [
+						camelMainKey,
+						...keys.slice(1).map((k) => hyphenToCamelCase(k)),
+					]
+					this.setNestedValue(rawOptions, camelKeys, false, camelCaseOptions)
 					return 0
 				}
 			} else {
-				// Handle top-level boolean flags
 				if (this.isBooleanSchema(mainSchema)) {
-					this.setNestedValue(rawOptions, keyPath, false, options)
+					this.setNestedValue(
+						rawOptions,
+						[camelMainKey],
+						false,
+						camelCaseOptions,
+					)
 					return 0
 				}
 			}
@@ -1942,10 +2064,15 @@ class ArgumentParser {
 
 		const keys = this.parseDotPath(keyPath)
 		const mainKey = keys[0]
-		const schema = options[mainKey]
+		const camelMainKey = hyphenToCamelCase(mainKey)
+		const schema = options[mainKey] || camelCaseOptions[camelMainKey]
 
 		if (!schema) {
-			const suggestion = this.findSimilarKey(mainKey, Object.keys(options))
+			const allKeys = [
+				...Object.keys(options),
+				...Object.keys(camelCaseOptions),
+			]
+			const suggestion = this.findSimilarKey(mainKey, allKeys)
 			const availableOptions: string[] = []
 			for (const [k, s] of Object.entries(options)) {
 				availableOptions.push(`--${k}`)
@@ -1957,22 +2084,30 @@ class ArgumentParser {
 			)
 		}
 
+		const normalizedMainKey = keyMapping.get(mainKey) || camelMainKey
 		const isSimple = keys.length === 1
-		const currentUsage = this.flagUsage.get(mainKey)
+		const currentUsage = this.flagUsage.get(normalizedMainKey)
 		const newUsage = isSimple ? 'simple' : 'object'
 
 		if (currentUsage && currentUsage !== newUsage) {
-			this.flagUsage.set(mainKey, 'both')
+			this.flagUsage.set(normalizedMainKey, 'both')
 			if (schema._type === 'union') {
 				throw new CLIError(
 					`Cannot mix forms for --${mainKey}\n\n  ${pc.dim('Previously used:')} ${currentUsage === 'simple' ? pc.yellow(`--${mainKey}`) : pc.yellow(`--${mainKey}.property`)}\n  ${pc.dim('Now trying:')} ${isSimple ? pc.red(`--${mainKey}`) : pc.red(`--${keyPath}`)}\n\n  ${pc.dim('Choose one approach consistently:')}\n    ${pc.green(`--${mainKey} value`)} ${pc.dim('for simple form')}\n    ${pc.green(`--${mainKey}.property value`)} ${pc.dim('for object form')}`,
 				)
 			}
 		} else {
-			this.flagUsage.set(mainKey, newUsage)
+			this.flagUsage.set(normalizedMainKey, newUsage)
 		}
 
-		const expectsValue = this.schemaExpectsValue(schema, keys.slice(1))
+		const camelKeys = this.shouldPreserveKeys(schema)
+			? [camelMainKey, ...keys.slice(1)] // Preserve original nested keys for dynamic objects
+			: [camelMainKey, ...keys.slice(1).map((k) => hyphenToCamelCase(k))] // Convert to camelCase for fixed schemas
+		const expectsValue = this.schemaExpectsValue(
+			schema,
+			camelKeys.slice(1),
+			keys.slice(1),
+		)
 		let consumed = 0
 
 		if (expectsValue === 'required' || expectsValue === 'union') {
@@ -1993,15 +2128,15 @@ class ArgumentParser {
 				const example = ErrorFormatter.formatCorrectUsage(
 					keys.join('.'),
 					undefined,
-					this.getSchemaAtPath(schema, keys.slice(1)),
+					this.getSchemaAtPath(schema, camelKeys.slice(1)),
 				)
 				throw new CLIError(
 					`--${keys.join('.')} needs a value\n\n  ${pc.dim('Usage:')} ${example}`,
 				)
 			}
 
-			this.setNestedValue(rawOptions, keys, value, options)
-			this.flagValues.set(mainKey, value)
+			this.setNestedValue(rawOptions, camelKeys, value, camelCaseOptions)
+			this.flagValues.set(normalizedMainKey, value)
 		} else if (expectsValue === 'boolean') {
 			let value: any
 
@@ -2018,8 +2153,8 @@ class ArgumentParser {
 				value = true
 			}
 
-			this.setNestedValue(rawOptions, keys, value, options)
-			this.flagValues.set(mainKey, value)
+			this.setNestedValue(rawOptions, camelKeys, value, camelCaseOptions)
+			this.flagValues.set(normalizedMainKey, value)
 		}
 
 		return consumed
@@ -2049,7 +2184,6 @@ class ArgumentParser {
 		return current
 	}
 
-	// Check if a schema is boolean (either directly or in a union)
 	private isBooleanSchema(schema: Schema): boolean {
 		if (schema._type === 'boolean') return true
 		if (schema._type === 'union') {
@@ -2069,8 +2203,13 @@ class ArgumentParser {
 		for (const key of nestedKeys) {
 			if (current._type === 'object') {
 				const objSchema = current as ObjectSchema
-				if (objSchema._shape?.[key]) {
-					current = objSchema._shape[key]
+				if (objSchema._shape) {
+					const camelKey = hyphenToCamelCase(key)
+					if (objSchema._shape[camelKey]) {
+						current = objSchema._shape[camelKey]
+					} else {
+						return undefined
+					}
 				} else {
 					return undefined
 				}
@@ -2079,12 +2218,14 @@ class ArgumentParser {
 				const objSchema = unionSchema._schemas.find((s: any) => {
 					if (s._type === 'object') {
 						const obj = s as ObjectSchema
-						return obj._shape?.[key] !== undefined
+						const camelKey = hyphenToCamelCase(key)
+						return obj._shape?.[camelKey] !== undefined
 					}
 					return false
 				})
 				if (objSchema) {
-					current = (objSchema as ObjectSchema)._shape![key]
+					const camelKey = hyphenToCamelCase(key)
+					current = (objSchema as ObjectSchema)._shape![camelKey]
 				} else {
 					return undefined
 				}
@@ -2100,27 +2241,55 @@ class ArgumentParser {
 		return ['true', 'false', '0', '1'].includes(value.toLowerCase())
 	}
 
+	private shouldPreserveKeys(schema: Schema): boolean {
+		if (schema._type === 'object') {
+			return (schema as ObjectSchema)._isAnyKeys || false
+		}
+		if (schema._type === 'union') {
+			const unionSchema = schema as UnionSchema<any>
+			return unionSchema._schemas.some(
+				(s: any) => s._type === 'object' && s._isAnyKeys,
+			)
+		}
+		return false
+	}
+
 	private schemaExpectsValue(
 		schema: Schema,
 		nestedKeys: string[],
+		originalKeys?: string[],
 	): 'required' | 'boolean' | 'union' {
 		let current = schema
 
-		for (const key of nestedKeys) {
+		for (let i = 0; i < nestedKeys.length; i++) {
+			const key = nestedKeys[i]
+			const originalKey = originalKeys?.[i] ?? key
+
 			if (current._type === 'object') {
 				const objSchema = current as ObjectSchema
 				if (objSchema._isAnyKeys) {
 					current = objSchema._valueSchema!
 					break
 				}
-				if (objSchema._shape?.[key]) {
-					current = objSchema._shape[key]
-				} else {
-					const validKeys = Object.keys(objSchema._shape || {})
-					const suggestion = this.findSimilarKey(key, validKeys)
-					throw new CLIError(
-						`Property '${key}' is not recognized\n\n  ${pc.dim('Available properties:')}\n${validKeys.map((k) => `    ${pc.cyan(k)}`).join('\n')}${suggestion ? `\n\n  ${pc.dim('Did you mean')} ${pc.green(suggestion)}${pc.dim('?')}` : ''}`,
-					)
+				if (objSchema._shape) {
+					const camelKey = hyphenToCamelCase(originalKey)
+					if (objSchema._shape[camelKey]) {
+						current = objSchema._shape[camelKey]
+					} else {
+						const validKeys = Object.keys(objSchema._shape || {})
+						const originalValidKeys = validKeys.map((k) =>
+							objSchema instanceof ObjectSchemaImpl
+								? objSchema.getOriginalKey(k)
+								: k,
+						)
+						const suggestion = this.findSimilarKey(
+							originalKey,
+							originalValidKeys,
+						)
+						throw new CLIError(
+							`Property '${originalKey}' is not recognized\n\n  ${pc.dim('Available properties:')}\n${originalValidKeys.map((k) => `    ${pc.cyan(k)}`).join('\n')}${suggestion ? `\n\n  ${pc.dim('Did you mean')} ${pc.green(suggestion)}${pc.dim('?')}` : ''}`,
+						)
+					}
 				}
 			} else if (current._type === 'union') {
 				const unionSchema = current as UnionSchema<any>
@@ -2133,7 +2302,10 @@ class ArgumentParser {
 						current = obj._valueSchema!
 						break
 					}
-					if (obj._shape?.[key]) current = obj._shape[key]
+					if (obj._shape) {
+						const camelKey = hyphenToCamelCase(originalKey)
+						if (obj._shape[camelKey]) current = obj._shape[camelKey]
+					}
 				}
 			}
 		}
@@ -2415,7 +2587,9 @@ class CLIImpl<
 	private handleArguments(args: string[]):
 		| 'handled'
 		| {
-				options: Prettify<{ [K in keyof TOptions]: TOptions[K]['_output'] }>
+				options: Prettify<
+					CamelCaseKeys<{ [K in keyof TOptions]: TOptions[K]['_output'] }>
+				>
 				positionals: ExtractNonRestPositionals<TPositionals>
 				rest: ExtractRestType<TPositionals>
 		  } {
@@ -2530,9 +2704,11 @@ class CLIImpl<
 		)
 
 		return {
-			options: parsed as Prettify<{
-				[K in keyof TOptions]: TOptions[K]['_output']
-			}>,
+			options: parsed as Prettify<
+				CamelCaseKeys<{
+					[K in keyof TOptions]: TOptions[K]['_output']
+				}>
+			>,
 			// @ts-expect-error
 			positionals: positionals as ExtractNonRestPositionals<TPositionals>,
 			rest: rest as ExtractRestType<TPositionals>,
