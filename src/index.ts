@@ -1452,7 +1452,7 @@ class HelpFormatter {
 
 	private generateNoDescription(key: string): string {
 		const words = key.split(/(?=[A-Z])|[._-]/).map((w) => w.toLowerCase())
-		return `Force disable ${words.join(' ')}`
+		return `Explicitly disable ${words.join(' ')}`
 	}
 
 	private buildUnionRows(
