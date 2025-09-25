@@ -2613,4 +2613,146 @@ describe('CLI Parser Tests', () => {
 			)
 		})
 	})
+	describe('ignoreOptionDefaultValue option', () => {
+		test('should exclude default values when ignoreOptionDefaultValue is true', () => {
+			const program = cli()
+				.option('name', z.string().default('John'))
+				.option('age', z.number().default(30))
+				.option('active', z.boolean().default(true))
+				.with({ ignoreOptionDefaultValue: true })
+
+			const result = program.parse([])
+			expect(result?.options).toMatchObject({})
+		})
+
+		test('should include default values when ignoreOptionDefaultValue is false', () => {
+			const program = cli()
+				.option('name', z.string().default('John'))
+				.option('age', z.number().default(30))
+				.option('active', z.boolean().default(true))
+				.with({ ignoreOptionDefaultValue: false })
+
+			const result = program.parse([])
+			expect(result?.options).toMatchObject({
+				name: 'John',
+				age: 30,
+				active: true,
+			})
+		})
+
+		test('should include explicitly provided values when ignoreOptionDefaultValue is true', () => {
+			const program = cli()
+				.option('name', z.string().default('John'))
+				.option('age', z.number().default(30))
+				.option('active', z.boolean().default(true))
+				.with({ ignoreOptionDefaultValue: true })
+
+			const result = program.parse(['--name', 'Alice', '--age', '25'])
+			expect(result?.options).toMatchObject({
+				name: 'Alice',
+				age: 25,
+			})
+		})
+
+		test('should handle nested objects with ignoreOptionDefaultValue', () => {
+			const program = cli()
+				.option(
+					'server',
+					z.object({
+						host: z.string().default('localhost'),
+						port: z.number().default(3000),
+						ssl: z.boolean().default(false),
+					}),
+				)
+				.with({ ignoreOptionDefaultValue: true })
+
+			const result = program.parse(['--server.port', '8080'])
+			expect(result?.options.server).toMatchObject({
+				port: 8080,
+			})
+		})
+
+		test('should work with commands when ignoreOptionDefaultValue is true', () => {
+			let captured: any = null
+			const program = cli().with({ ignoreOptionDefaultValue: true })
+
+			program
+				.command('build', {
+					output: z.string().default('dist'),
+					minify: z.boolean().default(true),
+					threads: z.number().default(4),
+				})
+				.action(({ options }) => {
+					captured = options
+				})
+
+			program.parse(['build', '--output', 'build'])
+			expect(captured).toEqual({
+				output: 'build',
+			})
+		})
+
+		test('should handle optional values with ignoreOptionDefaultValue', () => {
+			const program = cli()
+				.option('optional', z.string().optional())
+				.option('withDefault', z.string().default('default'))
+				.with({ ignoreOptionDefaultValue: true })
+
+			const result = program.parse([])
+			expect(result?.options).toMatchObject({})
+		})
+
+		test('should handle arrays and objects with defaults when ignoreOptionDefaultValue is true', () => {
+			const program = cli()
+				.option('tags', z.array(z.string()).default(['default-tag']))
+				.option(
+					'config',
+					z
+						.object({
+							name: z.string(),
+							value: z.number(),
+						})
+						.default({ name: 'default', value: 100 }),
+				)
+				.with({ ignoreOptionDefaultValue: true })
+
+			const result = program.parse(['--tags', 'custom'])
+			expect(result?.options).toMatchObject({
+				tags: ['custom'],
+			})
+		})
+
+		test('should respect custom default message in help', () => {
+			const program = cli()
+				.option(
+					'port',
+					z.number().default(3000, 'auto-detected from environment'),
+				)
+				.option('name', z.string().default('app', 'default: app'))
+
+			// @ts-expect-error
+			expect(program._options.port._defaultMessage).toBe(
+				'auto-detected from environment',
+			)
+			// @ts-expect-error
+			expect(program._options.name._defaultMessage).toBe('default: app')
+		})
+
+		test('should handle union with defaults when ignoreOptionDefaultValue is true', () => {
+			const program = cli()
+				.option(
+					'mode',
+					z.union(z.boolean().default(true), z.string()).default(false),
+				)
+				.with({ ignoreOptionDefaultValue: true })
+
+			const result = program.parse(['--mode', 'custom'])
+			expect(result?.options).toMatchObject({
+				mode: 'custom',
+			})
+
+			const result2 = program.parse([])
+			expect(result2?.options).toMatchObject({})
+		})
+	})
 })

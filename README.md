@@ -116,6 +116,30 @@ $ myapp --tags foo,bar,baz
 $ myapp --ports 3000,3001,3002
 ```
 
+### Default Values
+
+Set default values for options with optional custom messages:
+
+```typescript
+cli()
+  .option('port', z.number().default(3000))
+  .option('config', z.string())
+  .option('env', z.string().default(process.env.NODE_ENV, 'process.env.NODE_ENV by default'))
+  .option('verbose', z.boolean().default(false))
+```
+
+When you provide a custom message as the second parameter to `.default()`, it will be shown in the help output instead of the raw default value. This is useful for providing more descriptive help text:
+
+```bash
+$ myapp --help
+
+Flags:
+      --port     <n>     Server port (default: 3000)  
+      --config   <val>   Configuration file
+      --env      <val>   Environment mode (process.env.NODE_ENV by default)
+      --verbose          Enable verbose output (default: false)
+```
+
 ### Objects
 
 ```typescript
@@ -296,6 +320,32 @@ Error: -s is not recognized
     -q for --quiet
 
 Run with --help for usage information
+```
+
+## Options
+
+zlye provides configuration options to customize parsing behavior:
+
+### ignoreOptionDefaultValue
+
+When set to `true`, default values defined with `.default()` will not be included in the parsed result. Only explicitly provided values will be returned. Default values will still be shown in the help output.
+
+This is useful when you need to distinguish between user-provided values and defaults, for example when merging CLI arguments with configuration files or environment variables.
+
+```typescript
+import { cli, z } from 'zlye'
+
+const app = cli()
+  .option('port', z.number().default(3000))
+  .option('host', z.string().default('localhost'))
+  .with({ ignoreOptionDefaultValue: true })
+  .parse()
+
+// When parsing with no arguments
+// app.options will be {} instead of { port: 3000, host: 'localhost' }
+
+// When providing explicit values: --port 8080
+// app.options will be { port: 8080 }
 ```
 
 ## Advanced Features

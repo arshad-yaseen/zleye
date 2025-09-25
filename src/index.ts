@@ -1,16 +1,21 @@
 import pc from 'picocolors'
+
 import { joinWithAnd, joinWithOr, processExit } from './utils'
 
 type Prettify<T> = { [K in keyof T]: T[K] } & {}
+
 type ExtractPositionalType<T> = T extends PositionalSchema<infer U> ? U : never
+
 type ExtractPositionalTypes<T extends readonly PositionalSchema<any>[]> = {
 	readonly [K in keyof T]: ExtractPositionalType<T[K]>
 }
+
 type ExtractRestType<
 	T extends readonly (PositionalSchema<any> | VariadicPositionalSchema<any>)[],
 > = T extends readonly [...infer _, VariadicPositionalSchema<infer U>]
 	? U[]
 	: never
+
 type ExtractNonRestPositionals<
 	T extends readonly (PositionalSchema<any> | VariadicPositionalSchema<any>)[],
 > = T extends readonly [...infer P, VariadicPositionalSchema<any>]
@@ -22,7 +27,38 @@ type ExtractNonRestPositionals<
 		: readonly []
 
 type SchemaType = 'string' | 'number' | 'boolean' | 'array' | 'object' | 'union'
+
 type UnionToTuple<T> = T extends Schema<infer U>[] ? U : never
+
+interface ParseOptions {
+	/**
+	 * When set to `true`, default values defined with `.default()` will not be included
+	 * in the parsed result. Only explicitly provided values will be returned.
+	 * Default values will still be shown in the help output.
+	 *
+	 * This is useful when you need to distinguish between user-provided values and defaults,
+	 * for example when merging CLI arguments with configuration files or environment variables.
+	 *
+	 * @default false
+	 *
+	 * @example
+	 * ```typescript
+	 * const program = cli()
+	 *   .option('port', z.number().default(3000))
+	 *   .option('host', z.string().default('localhost'))
+	 *   .with({ ignoreOptionDefaultValue: true })
+	 *
+	 * // When parsing with no arguments
+	 * const result = program.parse([])
+	 * // result.options will be {} instead of { port: 3000, host: 'localhost' }
+	 *
+	 * // When providing explicit values
+	 * const result = program.parse(['--port', '8080'])
+	 * // result.options will be { port: 8080 }
+	 * ```
+	 */
+	ignoreOptionDefaultValue?: boolean
+}
 
 interface BaseSchema<T = any> {
 	_type: SchemaType
@@ -33,9 +69,10 @@ interface BaseSchema<T = any> {
 	_example?: string
 	_isOptional?: boolean
 	_defaultValue?: T
+	_defaultMessage?: string
 	parse(value: unknown, path?: string): T
 	optional(): Schema<T | undefined>
-	default(value: T): Schema<T>
+	default(value: T, message?: string): Schema<T>
 	transform<U>(fn: (value: T) => U): Schema<U>
 	describe(description: string): this
 	alias(alias: string): this
@@ -186,6 +223,7 @@ interface CLI<
 		name: string,
 		options?: T,
 	): CommandBuilder<T>
+	with(options: ParseOptions): this
 	parse(argv?: string[]):
 		| {
 				options: Prettify<{ [K in keyof TOptions]: TOptions[K]['_output'] }>
@@ -342,6 +380,7 @@ abstract class BaseSchemaImpl<T> implements BaseSchema<T> {
 	_example?: string
 	_isOptional?: boolean
 	_defaultValue?: T
+	_defaultMessage?: string
 
 	protected abstract validateValue(value: unknown, path: string): T
 
@@ -360,9 +399,10 @@ abstract class BaseSchemaImpl<T> implements BaseSchema<T> {
 		return clone
 	}
 
-	default(value: T): Schema<T> {
+	default(value: T, message?: string): Schema<T> {
 		const clone = Object.create(this)
 		clone._defaultValue = value
+		clone._defaultMessage = message
 		return clone
 	}
 
@@ -427,7 +467,6 @@ class StringSchemaImpl<T extends string = string>
 					value.toLowerCase().includes(c.toLowerCase()),
 			)
 			const choices = Array.from(this._choices)
-
 			let message = `${path} must be one of: ${choices.map((c) => pc.cyan(c)).join(', ')}\n\n`
 			message += similar
 				? `${ErrorFormatter.showDiff(
@@ -625,7 +664,6 @@ class BooleanSchemaImpl
 	protected validateValue(value: unknown, path: string): boolean {
 		const truthy = ['true', true, '1', 1]
 		const falsy = ['false', false, '0', 0]
-
 		if (truthy.includes(value as any)) return true
 		if (falsy.includes(value as any)) return false
 
@@ -671,6 +709,7 @@ class ArraySchemaImpl<T> extends BaseSchemaImpl<T[]> implements ArraySchema<T> {
 						.map((item) => item.trim())
 						.filter(Boolean)
 				: [value]
+
 		const flagName = path.replace('--', '')
 		const isArg = !path.startsWith('--')
 
@@ -829,7 +868,6 @@ class ObjectSchemaImpl<T extends Record<string, any> = Record<string, any>>
 					)
 					return similar ? `${pc.red(uk)} → ${pc.green(similar)}` : pc.red(uk)
 				})
-
 				const flagName = path.replace('--', '')
 				throw new CLIError(
 					`${path} received unexpected properties\n\n  ${pc.red('Invalid:')} ${suggestions.join(', ')}\n  ${pc.green('Valid:')} ${validKeys.map((k) => pc.cyan(k)).join(', ')}\n\n${pc.dim('Available properties:\n')}${validKeys.map((k) => `  ${pc.cyan(`--${flagName}.${k}`)}`).join('\n')}`,
@@ -891,7 +929,6 @@ class UnionSchemaImpl<T extends readonly Schema[]>
 			} catch (error) {
 				if (error instanceof CLIError) {
 					let specificity = 0
-
 					if (
 						schema._type === 'object' &&
 						typeof value === 'object' &&
@@ -922,21 +959,18 @@ class UnionSchemaImpl<T extends readonly Schema[]>
 					} else if (schema._type === typeof value) {
 						specificity = 1
 					}
-
 					errors.push({ schema, error: error.message, specificity })
 				}
 			}
 		}
 
 		errors.sort((a, b) => b.specificity - a.specificity)
-
 		if (errors[0]?.specificity > 0) {
 			throw new CLIError(errors[0].error)
 		}
 
 		const flagName = path.replace('--', '')
 		const examples = this.getExampleUsages(flagName, value)
-
 		throw new CLIError(
 			`${path} accepts multiple formats\n\n${pc.dim('Valid formats:')}\n${examples.map((ex) => `  ${ex}`).join('\n')}\n\n  ${pc.dim('You provided:')} ${ErrorFormatter.formatValue(value)}\n\n${pc.dim('Run with --help for usage information')}`,
 		)
@@ -1004,6 +1038,7 @@ class PositionalSchemaImpl<T = string>
 		this._baseSchema = schema || (new StringSchemaImpl() as any)
 		this._isOptional = this._baseSchema._isOptional
 		this._defaultValue = this._baseSchema._defaultValue
+		this._defaultMessage = this._baseSchema._defaultMessage
 		this._description = this._baseSchema._description
 	}
 
@@ -1162,7 +1197,6 @@ class HelpFormatter {
 	private printHeader(): void {
 		console.log()
 		const { _name, _version, _description } = this.cli
-
 		if (_description && _version) {
 			console.log(`${_description} ${pc.dim(`(${_version})`)}`)
 			console.log()
@@ -1183,7 +1217,6 @@ class HelpFormatter {
 		} else {
 			const parts = [this.cli._name || 'cli']
 			if (this.cli._commands.length) parts.push(pc.blue('<command>'))
-
 			if (this.cli._positionals.length) {
 				parts.push(
 					...this.cli._positionals.map((p) =>
@@ -1193,10 +1226,8 @@ class HelpFormatter {
 					),
 				)
 			}
-
 			if (Object.keys(this.cli._options).length)
 				parts.push(pc.blue('[...flags]'))
-
 			console.log(`${pc.bold('Usage:')} ${parts.join(' ')}`)
 		}
 		console.log()
@@ -1204,7 +1235,6 @@ class HelpFormatter {
 
 	private printPositionals(): void {
 		if (!this.cli._positionals.length) return
-
 		console.log(pc.bold('Arguments:'))
 		for (const pos of this.cli._positionals) {
 			const isVariadic = '_isVariadic' in pos && pos._isVariadic
@@ -1216,8 +1246,8 @@ class HelpFormatter {
 
 	private printCommands(): void {
 		if (!this.cli._commands.length) return
-
 		console.log(pc.bold('Commands:'))
+
 		const rows = this.cli._commands.map((cmd) => ({
 			name: cmd.name,
 			example: Array.isArray(cmd.example) ? cmd.example[0] : cmd.example || '',
@@ -1241,7 +1271,6 @@ class HelpFormatter {
 
 	private printOptions(): void {
 		if (!Object.keys(this.cli._options).length) return
-
 		console.log(pc.bold('Flags:'))
 		this.printOptionsTable(this.cli._options)
 		console.log()
@@ -1249,7 +1278,6 @@ class HelpFormatter {
 
 	private printExamples(): void {
 		if (!this.cli._examples.length) return
-
 		console.log(pc.bold('Examples:'))
 		for (const example of this.cli._examples) {
 			this.printExample(example)
@@ -1270,7 +1298,6 @@ class HelpFormatter {
 
 	private printCommandPositionals(command: Command): void {
 		if (!command.positionals?.length) return
-
 		console.log(pc.bold('Arguments:'))
 		for (const pos of command.positionals) {
 			const isVariadic = '_isVariadic' in pos && pos._isVariadic
@@ -1282,7 +1309,6 @@ class HelpFormatter {
 
 	private printCommandOptions(command: Command): void {
 		if (!Object.keys(command.options).length) return
-
 		console.log(pc.bold('Flags:'))
 		this.printOptionsTable(command.options)
 		console.log()
@@ -1362,7 +1388,7 @@ class HelpFormatter {
 				if (schema._type === 'boolean' && !addedNoVersions.has(fullKey)) {
 					addedNoVersions.add(fullKey)
 					rows.push({
-						flags: `    --no-${fullKey}`,
+						flags: `     --no-${fullKey}`,
 						type: pc.dim(''),
 						desc: this.generateNoDescription(fullKey),
 					})
@@ -1384,8 +1410,8 @@ class HelpFormatter {
 		addedNoVersions: Set<string>,
 	): Array<{ flags: string; type: string; desc: string }> {
 		const rows: Array<{ flags: string; type: string; desc: string }> = []
-		const groups = new Map<string, Schema[]>()
 
+		const groups = new Map<string, Schema[]>()
 		for (const s of schema._schemas) {
 			const type = s._type
 			if (!groups.has(type)) groups.set(type, [])
@@ -1400,7 +1426,7 @@ class HelpFormatter {
 		for (const objSchema of objectSchemas) {
 			if ((objSchema as ObjectSchema)._isAnyKeys) {
 				rows.push({
-					flags: `    --${key}.<key>`,
+					flags: `     --${key}.<key>`,
 					type: this.getOptionType(key, objSchema),
 					desc: this.getOptionDescription(objSchema),
 				})
@@ -1428,7 +1454,7 @@ class HelpFormatter {
 		if (hasBooleanSchema && !addedNoVersions.has(key)) {
 			addedNoVersions.add(key)
 			rows.push({
-				flags: `    --no-${key}`,
+				flags: `     --no-${key}`,
 				type: pc.dim(''),
 				desc: this.generateNoDescription(key),
 			})
@@ -1443,8 +1469,8 @@ class HelpFormatter {
 
 	private getOptionFlags(key: string, schema: Schema): string {
 		if (schema._type === 'object' && (schema as ObjectSchema)._isAnyKeys)
-			return `    --${key}.<key>`
-		return schema._alias ? `-${schema._alias}, --${key}` : `    --${key}`
+			return `     --${key}.<key>`
+		return schema._alias ? ` -${schema._alias}, --${key}` : `     --${key}`
 	}
 
 	private getOptionType(_key: string, schema: Schema): string {
@@ -1471,11 +1497,12 @@ class HelpFormatter {
 			return this.getOptionType(_key, (schema as ObjectSchema)._valueSchema!)
 		}
 
-		return ` ${pc.dim(`<${valueType}>`)}  `
+		return `  ${pc.dim(`<${valueType}>`)}  `
 	}
 
 	private getOptionDescription(schema: Schema): string {
 		const parts: string[] = []
+
 		if (schema._description) parts.push(schema._description)
 		if (schema._example) parts.push(pc.dim(`Example: ${schema._example}`))
 
@@ -1489,11 +1516,15 @@ class HelpFormatter {
 		const constraints: string[] = []
 
 		if (schema._defaultValue !== undefined) {
-			const value =
-				schema._type === 'boolean'
-					? schema._defaultValue
-					: JSON.stringify(schema._defaultValue)
-			constraints.push(`default: ${value}`)
+			if (schema._defaultMessage) {
+				constraints.push(schema._defaultMessage)
+			} else {
+				const value =
+					schema._type === 'boolean'
+						? schema._defaultValue
+						: JSON.stringify(schema._defaultValue)
+				constraints.push(`default: ${value}`)
+			}
 		}
 
 		if (schema._type === 'string') {
@@ -1520,6 +1551,7 @@ class HelpFormatter {
 
 	private buildCommandUsage(command: Command): string {
 		const parts = [this.cli._name || 'cli', command.name]
+
 		if (command.positionals) {
 			parts.push(
 				...command.positionals.map((p) =>
@@ -1529,7 +1561,9 @@ class HelpFormatter {
 				),
 			)
 		}
+
 		if (Object.keys(command.options).length) parts.push(pc.cyan('[...flags]'))
+
 		return parts.join(' ')
 	}
 
@@ -1552,6 +1586,7 @@ class ArgumentParser {
 	parse(
 		args: string[],
 		options: Record<string, Schema>,
+		parseOptions?: ParseOptions,
 	): {
 		parsed: Record<string, any>
 		positionalArgs: any[]
@@ -1576,7 +1611,6 @@ class ArgumentParser {
 
 		for (let i = 0; i < args.length; i++) {
 			const arg = args[i]
-
 			if (arg.startsWith('--')) {
 				i += this.parseFlag(arg, args, i, options, rawOptions)
 			} else if (arg.startsWith('-') && !this.looksLikeNegativeNumber(arg)) {
@@ -1589,10 +1623,16 @@ class ArgumentParser {
 		positionalArgs.push(...rawArgs)
 
 		for (const [key, schema] of Object.entries(options)) {
-			parsed[key] =
+			const value =
 				rawOptions[key] !== undefined
 					? this.parseOptionWithSchema(key, schema, rawOptions[key], options)
-					: schema.parse(undefined, `--${key}`)
+					: parseOptions?.ignoreOptionDefaultValue
+						? undefined
+						: schema.parse(undefined, `--${key}`)
+
+			if (value !== undefined) {
+				parsed[key] = value
+			}
 		}
 
 		return { parsed, positionalArgs, rawArgs }
@@ -1626,7 +1666,6 @@ class ArgumentParser {
 		for (const [key, flags] of occurrences.entries()) {
 			if (flags.length > 1) {
 				const schema = options[key]
-
 				if (schema._type === 'union') {
 					const hasSimple = flags.some(
 						(f) => !f.includes('.') || f.split('=')[0] === `--${key}`,
@@ -1642,7 +1681,6 @@ class ArgumentParser {
 						const objectFlags = flags.filter(
 							(f) => f.includes('.') && !f.split('=')[0].endsWith(key),
 						)
-
 						throw new CLIError(
 							`Cannot mix different forms of --${key}\n\n  ${pc.dim('You used both:')}\n    ${pc.red('Simple:')} ${simpleFlags.join(', ')}\n    ${pc.red('Object:')} ${objectFlags.join(', ')}\n\n  ${pc.dim('Choose one approach:')}\n    ${pc.green(`--${key}`)} ${pc.dim('for simple values')}\n    ${pc.green(`--${key}.property`)} ${pc.dim('for object properties')}`,
 						)
@@ -1811,6 +1849,7 @@ class ArgumentParser {
 		if (schema._shape) {
 			const result: any = {}
 			const allOptions: string[] = []
+
 			for (const [k, v] of Object.entries(rawValue)) {
 				if (!schema._shape[k]) {
 					const validKeys = Object.keys(schema._shape)
@@ -1818,19 +1857,21 @@ class ArgumentParser {
 						const vk = validKeys[i]
 						allOptions.push(`--${path.slice(2)}.${vk}`)
 					}
-					const suggestion = this.findSimilarKey(k, validKeys)
 
+					const suggestion = this.findSimilarKey(k, validKeys)
 					throw new CLIError(
 						`${path}.${k} is not recognized\n\n  ${pc.dim('Available properties:')}\n${validKeys.map((vk) => `    ${pc.green(`--${path.slice(2)}.${vk}`)}`).join('\n')}${suggestion ? `\n\n  ${pc.dim('Did you mean')} ${pc.green(`--${path.slice(2)}.${suggestion}`)}${pc.dim('?')}` : ''}`,
 					)
 				}
 				result[k] = schema._shape[k].parse(v, `${path}.${k}`)
 			}
+
 			for (const [k, fieldSchema] of Object.entries(schema._shape)) {
 				if (!(k in result)) {
 					result[k] = fieldSchema.parse(undefined, `${path}.${k}`)
 				}
 			}
+
 			return result
 		}
 
@@ -1898,6 +1939,7 @@ class ArgumentParser {
 		const explicitValue = hasExplicitValue
 			? this.parseValue(valueParts.join('='))
 			: undefined
+
 		const keys = this.parseDotPath(keyPath)
 		const mainKey = keys[0]
 		const schema = options[mainKey]
@@ -1921,7 +1963,6 @@ class ArgumentParser {
 
 		if (currentUsage && currentUsage !== newUsage) {
 			this.flagUsage.set(mainKey, 'both')
-
 			if (schema._type === 'union') {
 				throw new CLIError(
 					`Cannot mix forms for --${mainKey}\n\n  ${pc.dim('Previously used:')} ${currentUsage === 'simple' ? pc.yellow(`--${mainKey}`) : pc.yellow(`--${mainKey}.property`)}\n  ${pc.dim('Now trying:')} ${isSimple ? pc.red(`--${mainKey}`) : pc.red(`--${keyPath}`)}\n\n  ${pc.dim('Choose one approach consistently:')}\n    ${pc.green(`--${mainKey} value`)} ${pc.dim('for simple form')}\n    ${pc.green(`--${mainKey}.property value`)} ${pc.dim('for object form')}`,
@@ -1936,6 +1977,7 @@ class ArgumentParser {
 
 		if (expectsValue === 'required' || expectsValue === 'union') {
 			let value: any
+
 			if (hasExplicitValue) {
 				value = explicitValue
 			} else if (
@@ -1962,6 +2004,7 @@ class ArgumentParser {
 			this.flagValues.set(mainKey, value)
 		} else if (expectsValue === 'boolean') {
 			let value: any
+
 			if (hasExplicitValue) {
 				value = explicitValue
 			} else if (
@@ -1974,6 +2017,7 @@ class ArgumentParser {
 			} else {
 				value = true
 			}
+
 			this.setNestedValue(rawOptions, keys, value, options)
 			this.flagValues.set(mainKey, value)
 		}
@@ -2022,7 +2066,6 @@ class ArgumentParser {
 		if (!schema || !nestedKeys.length) return schema
 
 		let current = schema
-
 		for (const key of nestedKeys) {
 			if (current._type === 'object') {
 				const objSchema = current as ObjectSchema
@@ -2040,7 +2083,6 @@ class ArgumentParser {
 					}
 					return false
 				})
-
 				if (objSchema) {
 					current = (objSchema as ObjectSchema)._shape![key]
 				} else {
@@ -2071,7 +2113,6 @@ class ArgumentParser {
 					current = objSchema._valueSchema!
 					break
 				}
-
 				if (objSchema._shape?.[key]) {
 					current = objSchema._shape[key]
 				} else {
@@ -2158,6 +2199,7 @@ class ArgumentParser {
 				rawOptions[optionName] = this.parseValue(args[index + 1])
 				return 1
 			}
+
 			const example = ErrorFormatter.formatCorrectUsage(
 				optionName,
 				undefined,
@@ -2172,6 +2214,7 @@ class ArgumentParser {
 			rawOptions[optionName] = this.parseValue(args[index + 1])
 			return 1
 		}
+
 		rawOptions[optionName] = true
 		return 0
 	}
@@ -2199,6 +2242,7 @@ class ArgumentParser {
 						`Cannot mix value types for --${mainKey}\n\n  ${pc.dim('Previously set:')} --${mainKey} ${ErrorFormatter.formatValue(existingValue)}\n  ${pc.dim('Now trying:')} --${keys.join('.')} ${ErrorFormatter.formatValue(value)}\n\n  ${pc.dim('Use one approach consistently:')}\n    ${pc.green(`--${mainKey} value`)} ${pc.dim('for simple values')}\n    ${pc.green(`--${mainKey}.property value`)} ${pc.dim('for object properties')}`,
 					)
 				}
+
 				throw new CLIError(
 					`Cannot set property on non-object value\n\n  ${pc.dim('Flag:')} --${mainKey}\n  ${pc.dim('Current value:')} ${ErrorFormatter.formatValue(existingValue)}\n  ${pc.dim('Attempted:')} --${keys.join('.')} ${ErrorFormatter.formatValue(value)}`,
 				)
@@ -2273,6 +2317,7 @@ class CLIImpl<
 	_options: TOptions = {} as TOptions
 	_positionals: (PositionalSchema<any> | VariadicPositionalSchema<any>)[] = []
 	_commands: Command<any, any>[] = []
+	_parseOptions?: ParseOptions
 
 	private formatter = new HelpFormatter(this)
 	private parser = new ArgumentParser()
@@ -2351,6 +2396,11 @@ class CLIImpl<
 		}) as CommandBuilder<T>
 	}
 
+	with(options: ParseOptions): this {
+		this._parseOptions = { ...this._parseOptions, ...options }
+		return this
+	}
+
 	parse(argv: string[] = process.argv.slice(2)) {
 		try {
 			const result = this.handleArguments([...argv])
@@ -2373,7 +2423,6 @@ class CLIImpl<
 		if (this.handleHelp(args)) return 'handled'
 
 		const { command, remainingArgs } = this.extractCommand(args)
-
 		if (command) {
 			return this.executeCommand(command, remainingArgs)
 		}
@@ -2439,7 +2488,12 @@ class CLIImpl<
 	}
 
 	private executeCommand(command: Command, args: string[]): 'handled' {
-		const { parsed, positionalArgs } = this.parser.parse(args, command.options)
+		const { parsed, positionalArgs } = this.parser.parse(
+			args,
+			command.options,
+			this._parseOptions,
+		)
+
 		const { positionals, rest } = this.parsePositionals(
 			positionalArgs,
 			command.positionals || [],
@@ -2464,7 +2518,12 @@ class CLIImpl<
 	}
 
 	private parseMainCommand(args: string[]) {
-		const { parsed, positionalArgs } = this.parser.parse(args, this._options)
+		const { parsed, positionalArgs } = this.parser.parse(
+			args,
+			this._options,
+			this._parseOptions,
+		)
+
 		const { positionals, rest } = this.parsePositionals(
 			positionalArgs,
 			this._positionals,
@@ -2498,7 +2557,6 @@ class CLIImpl<
 			for (let i = 0; i < variadicIndex; i++) {
 				const schema = schemas[i]
 				const value = args[i]
-
 				try {
 					positionals.push(schema.parse(value, schema._name))
 				} catch (error) {
@@ -2514,7 +2572,6 @@ class CLIImpl<
 
 			const variadicSchema = schemas[variadicIndex] as VariadicPositionalSchema
 			const variadicArgs = args.slice(variadicIndex)
-
 			try {
 				rest = variadicSchema.parse(variadicArgs, variadicSchema._name)
 			} catch (error) {
@@ -2530,7 +2587,6 @@ class CLIImpl<
 			for (let i = 0; i < schemas.length; i++) {
 				const schema = schemas[i]
 				const value = args[i]
-
 				try {
 					positionals.push(schema.parse(value, schema._name))
 				} catch (error) {

@@ -344,15 +344,12 @@ const program = cli()
 
 	.option(
 		'css',
-		z
-			.object({
-				typedModules: z
-					.boolean()
-					.describe('Generate TypeScript definitions for CSS modules'),
-			})
-			.default({
-				typedModules: true,
-			}),
+		z.object({
+			typedModules: z
+				.boolean()
+				.describe('Generate TypeScript definitions for CSS modules')
+				.default(true),
+		}),
 	)
 
 	.rest('entries', z.string().describe('Entry point files to bundle'))
