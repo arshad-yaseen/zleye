@@ -846,7 +846,6 @@ class ObjectSchemaImpl<T extends Record<string, any> = Record<string, any>>
 		}
 	}
 
-	// Helper method to get original key from camelCase key
 	public getOriginalKey(camelKey: string): string {
 		if (!this._originalShape) return camelKey
 		for (const [originalKey, _] of Object.entries(this._originalShape)) {
@@ -855,17 +854,6 @@ class ObjectSchemaImpl<T extends Record<string, any> = Record<string, any>>
 			}
 		}
 		return camelKey
-	}
-
-	// Helper method to get camelCase key from original key
-	private getCamelKey(originalKey: string): string {
-		return hyphenToCamelCase(originalKey)
-	}
-
-	// Helper method to get all original keys
-	private getOriginalKeys(): string[] {
-		if (!this._originalShape) return []
-		return Object.keys(this._originalShape)
 	}
 
 	protected validateValue(value: unknown, path: string): T {
@@ -898,7 +886,6 @@ class ObjectSchemaImpl<T extends Record<string, any> = Record<string, any>>
 		if (this._isAnyKeys && this._valueSchema) {
 			const result: any = {}
 			for (const [key, val] of Object.entries(objectValue)) {
-				// For dynamic objects with any keys, preserve the original key names
 				result[key] = this._valueSchema.parse(val, `${path}.${key}`)
 			}
 			return result as T
@@ -1465,7 +1452,7 @@ class HelpFormatter {
 
 	private generateNoDescription(key: string): string {
 		const words = key.split(/(?=[A-Z])|[._-]/).map((w) => w.toLowerCase())
-		return `Disable ${words.join(' ')}`
+		return `Force disable ${words.join(' ')}`
 	}
 
 	private buildUnionRows(
@@ -1711,7 +1698,6 @@ class ArgumentParser {
 		positionalArgs.push(...rawArgs)
 
 		for (const [key, schema] of Object.entries(camelCaseOptions)) {
-			// Find the original hyphenated key for error messages
 			const originalKey =
 				Array.from(keyMapping.entries()).find(
 					([_, camelKey]) => camelKey === key,
@@ -1941,7 +1927,6 @@ class ArgumentParser {
 		if (schema._isAnyKeys && schema._valueSchema) {
 			const result: any = {}
 			for (const [k, v] of Object.entries(rawValue)) {
-				// For dynamic objects with any keys, preserve the original key names
 				result[k] = schema._valueSchema.parse(v, `${path}.${k}`)
 			}
 			return result
@@ -2101,8 +2086,8 @@ class ArgumentParser {
 		}
 
 		const camelKeys = this.shouldPreserveKeys(schema)
-			? [camelMainKey, ...keys.slice(1)] // Preserve original nested keys for dynamic objects
-			: [camelMainKey, ...keys.slice(1).map((k) => hyphenToCamelCase(k))] // Convert to camelCase for fixed schemas
+			? [camelMainKey, ...keys.slice(1)]
+			: [camelMainKey, ...keys.slice(1).map((k) => hyphenToCamelCase(k))]
 		const expectsValue = this.schemaExpectsValue(
 			schema,
 			camelKeys.slice(1),
